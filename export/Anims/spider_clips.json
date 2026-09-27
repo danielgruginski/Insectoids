@@ -1,0 +1,104 @@
+{
+ "clips": [
+  {
+   "name": "GetUp",
+   "frames": 40,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": []
+  },
+  {
+   "name": "Idle",
+   "frames": 90,
+   "fps": 30,
+   "loop": true,
+   "rootMotion": false,
+   "events": []
+  },
+  {
+   "name": "Walk",
+   "frames": 24,
+   "fps": 30,
+   "loop": true,
+   "rootMotion": true,
+   "events": []
+  },
+  {
+   "name": "Run",
+   "frames": 12,
+   "fps": 30,
+   "loop": true,
+   "rootMotion": true,
+   "events": []
+  },
+  {
+   "name": "Hit",
+   "frames": 15,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": []
+  },
+  {
+   "name": "Death",
+   "frames": 60,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": [
+    {
+     "name": "Dead",
+     "time": 1.75
+    }
+   ]
+  },
+  {
+   "name": "Bite",
+   "frames": 36,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": [
+    {
+     "name": "Bite",
+     "time": 0.5
+    }
+   ]
+  },
+  {
+   "name": "Strike",
+   "frames": 40,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": [
+    {
+     "name": "Strike",
+     "time": 0.73
+    }
+   ]
+  },
+  {
+   "name": "WebSpit",
+   "frames": 48,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": [
+    {
+     "name": "Spit",
+     "time": 0.67
+    }
+   ]
+  },
+  {
+   "name": "Threat",
+   "frames": 72,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": []
+  }
+ ]
+}

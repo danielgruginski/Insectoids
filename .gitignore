@@ -1,0 +1,6 @@
+# Heavy or regenerated files stay on disk but out of git.
+/blender/*.blend[0-9]*
+/renders/
+
+__pycache__/
+*.pyc
