@@ -10,8 +10,9 @@ using static Insectoids.EditorTools.InsectSetupUtil;
 namespace Insectoids.EditorTools
 {
     /// <summary>
-    /// Scenes/Insectoids_Test: every creature that is installed (spiders on the ground, wasps in the air) on random
-    /// clips, and goblins around them (if Assets/Goblins is installed) as the spiders' prey. Press Play.
+    /// Scenes/Insectoids_Test: every creature that is installed (spiders, spiderlings and a broodmother on the ground,
+    /// wasps in the air, centipedes) on random clips, egg props lying about, and goblins around them (if Assets/Goblins
+    /// is installed) as the spiders' prey. Press Play.
     /// Tools > Insectoids > Build Test Scene; the creature setups rebuild it too.
     /// </summary>
     public static class InsectoidsTestScene
@@ -55,6 +56,8 @@ namespace Insectoids.EditorTools
                 (SpiderSetup.PrefabPath, SpiderSetup.SetPath, "Spider", 5, 5f, 1.4f, 2.6f),
                 (WaspSetup.PrefabPath, WaspSetup.SetPath, "Wasp", 4, 4f, 2.6f, 2.2f),
                 (CentipedeSetup.PrefabPath, CentipedeSetup.SetPath, "Centipede", 3, 5f, 0.9f, 3.2f),
+                (SpiderlingSetup.PrefabPath, SpiderlingSetup.SetPath, "Spiderling", 4, 2.5f, 0.6f, 1.0f),
+                (BroodmotherSetup.PrefabPath, BroodmotherSetup.SetPath, "Broodmother", 1, 8f, 2.6f, 4.5f),
             })
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
@@ -76,6 +79,23 @@ namespace Insectoids.EditorTools
                 }
                 counts.Add($"{count} {label.ToLower()}s");
             }
+            int props = 0;                               // egg clutches and hatched eggs lying about (static)
+            Transform propRoot = null;
+            foreach (var (name, count) in new[] { ("SpiderEgg_Clutch", 2), ("SpiderEgg_Hatched", 2), ("SpiderEgg_Single", 1) })
+            {
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(SpiderEggsSetup.PrefabPath(name));
+                if (prefab == null) continue;
+                if (propRoot == null) propRoot = new GameObject("SpiderEggs").transform;
+                for (int i = 0; i < count; i++)
+                {
+                    var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
+                    go.name = $"{name}_{i:00}";
+                    go.transform.SetParent(propRoot, false);
+                    go.transform.SetPositionAndRotation(Spot(11f, 2.5f), Quaternion.Euler(0, (float)rng.NextDouble() * 360f, 0));
+                    props++;
+                }
+            }
+            if (props > 0) counts.Add($"{props} egg props");
             int goblins = AddGoblins(rng, 8);
             var cam = new GameObject("Camera").AddComponent<Camera>();
             cam.tag = "MainCamera";
@@ -128,6 +148,52 @@ namespace Insectoids.EditorTools
             Render(MakeCamera("CAM_Colony", new Vector3(0, 40 * Mathf.Sin(50 * Mathf.Deg2Rad), -40 * Mathf.Cos(50 * Mathf.Deg2Rad)),
                               new Vector3(0, 0.5f, 0), 30), dir, "lineup_colony_40m.png", 1600, 900);
             log.AppendLine("  renders: " + dir);
+            if (!string.IsNullOrEmpty(previousPath) && AssetDatabase.LoadAssetAtPath<SceneAsset>(previousPath) != null)
+                EditorSceneManager.OpenScene(previousPath, OpenSceneMode.Single);
+            else if (AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null)
+                EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        }
+
+        /// <summary>Verification renders (not saved) of the spider family side by side at the game camera (22 m away, 50 deg
+        /// pitch, fov 30) and at 12 m: an egg clutch with a single and a hatched egg, the spiderling, the giant spider, the
+        /// broodmother, in their bind poses.</summary>
+        public static void RenderFamily(string dir, StringBuilder log)
+        {
+            var members = new (string path, Vector3 pos)[]
+            {
+                (SpiderEggsSetup.PrefabPath("SpiderEgg_Clutch"), new Vector3(-5.6f, 0, 0)),
+                (SpiderEggsSetup.PrefabPath("SpiderEgg_Single"), new Vector3(-6.1f, 0, -0.9f)),
+                (SpiderEggsSetup.PrefabPath("SpiderEgg_Hatched"), new Vector3(-5.1f, 0, -1.0f)),
+                (SpiderlingSetup.PrefabPath, new Vector3(-4.1f, 0, 0)),
+                (SpiderSetup.PrefabPath, new Vector3(-1.2f, 0, 0)),
+                (BroodmotherSetup.PrefabPath, new Vector3(3.9f, 0, 0)),
+            };
+            var missing = members.Where(m => AssetDatabase.LoadAssetAtPath<GameObject>(m.path) == null).Select(m => m.path).ToList();
+            if (missing.Count > 0)
+            {
+                log.AppendLine("  family render skipped, missing: " + string.Join(", ", missing));
+                return;
+            }
+            if (AnyDirty())
+            {
+                log.AppendLine("  family render skipped: an open scene has unsaved changes");
+                return;
+            }
+            var previousPath = SceneManager.GetActiveScene().path;
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            Lighting(60f);
+            foreach (var (path, pos) in members)
+            {
+                var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(path));
+                go.transform.SetPositionAndRotation(pos, Quaternion.Euler(0, 208f, 0));
+            }
+            var target = new Vector3(-0.6f, 0.5f, 0);
+            foreach (var (file, d) in new[] { ("family_game_22m.png", 22f), ("family_game_12m.png", 12f) })
+            {
+                var pos = target + new Vector3(0, d * Mathf.Sin(50 * Mathf.Deg2Rad), -d * Mathf.Cos(50 * Mathf.Deg2Rad));
+                Render(MakeCamera("CAM_Game", pos, target, 30), dir, file, 1920, 1080);
+            }
+            log.AppendLine("  family renders: " + dir);
             if (!string.IsNullOrEmpty(previousPath) && AssetDatabase.LoadAssetAtPath<SceneAsset>(previousPath) != null)
                 EditorSceneManager.OpenScene(previousPath, OpenSceneMode.Single);
             else if (AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) != null)

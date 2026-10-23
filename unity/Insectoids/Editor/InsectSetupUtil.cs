@@ -203,6 +203,29 @@ namespace Insectoids.EditorTools
             return (avatar, motionPath, model);
         }
 
+        /// <summary>A static prop (no rig, no animation): materials remapped, nothing else imported.</summary>
+        public static GameObject ConfigureStaticModel(string path, (string source, Material mat)[] remaps, StringBuilder log)
+        {
+            var imp = (ModelImporter)AssetImporter.GetAtPath(path);
+            imp.importCameras = false;
+            imp.importLights = false;
+            imp.importAnimation = false;
+            imp.importBlendShapes = false;
+            imp.animationType = ModelImporterAnimationType.None;
+            imp.isReadable = false;
+            imp.materialImportMode = ModelImporterMaterialImportMode.ImportViaMaterialDescription;
+            foreach (var (source, mat) in remaps)
+                imp.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), source), mat);
+            imp.SaveAndReimport();
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            var mf = model.GetComponentInChildren<MeshFilter>();
+            var mr = model.GetComponentInChildren<MeshRenderer>();
+            log.AppendLine($"{Path.GetFileName(path)}: tris={(mf != null ? mf.sharedMesh.triangles.Length / 3 : 0)} " +
+                           $"bounds={(mf != null ? mf.sharedMesh.bounds.size.ToString("F2") : "-")} " +
+                           $"materials={string.Join("+", mr != null ? mr.sharedMaterials.Select(m => m != null ? m.name : "null") : new string[0])}");
+            return model;
+        }
+
         /// <summary><prefix>@<clip>.fbx: Generic, avatar copied from the model, one clip each; loop flags, root motion
         /// and events (functionName <paramref name="eventFunction"/>) from the JSON the Blender export writes.</summary>
         public static Dictionary<string, AnimationClip> ConfigureClips(string prefix, string jsonPath, Avatar avatar,

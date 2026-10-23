@@ -6,16 +6,16 @@ from bug_common import ROOT
 RENDERS = os.path.join(ROOT, "renders")
 
 
-def setup_scene(name="Spider", prefix="", lift=0.0):
+def setup_scene(name="Spider", prefix="", lift=0.0, scale=1.0):
     """The creature's scene (created if missing), its cameras (named prefix + CAM_*, aimed `lift` metres higher for
-    fliers), the shared lights and ground."""
+    fliers, framed for a creature `scale` times the adult spider's size), the shared lights and ground."""
     scn = bpy.data.scenes.get(name) or bpy.data.scenes.new(name)
     scn.unit_settings.system = 'METRIC'
     scn.view_settings.view_transform = 'Standard'
     scn.render.resolution_x = 1000
     scn.render.resolution_y = 1000
     scn.render.fps = 30
-    add_cameras(scn, prefix, lift)
+    add_cameras(scn, prefix, lift, scale)
     add_lights(scn)
     add_ground(scn)
     return scn
@@ -41,11 +41,12 @@ def _cam(scn, name, loc, target, ortho=None, lens=85):
     return cam
 
 
-def add_cameras(scn, prefix="", lift=0.0):
-    up = lambda v: (v[0], v[1], v[2] + lift)
-    _cam(scn, prefix + "CAM_Front", up((0, -8, 0.6)), up((0, 0, 0.6)), ortho=3.6)
-    _cam(scn, prefix + "CAM_Side", up((8, 0, 0.6)), up((0, 0, 0.6)), ortho=3.6)
-    _cam(scn, prefix + "CAM_Top", (0, 0, 8 + lift), (0, 0.0001, 0), ortho=3.8)
+def add_cameras(scn, prefix="", lift=0.0, scale=1.0):
+    k = scale
+    up = lambda v: (v[0] * k, v[1] * k, v[2] * k + lift) if k != 1.0 else (v[0], v[1], v[2] + lift)
+    _cam(scn, prefix + "CAM_Front", up((0, -8, 0.6)), up((0, 0, 0.6)), ortho=3.6 * k)
+    _cam(scn, prefix + "CAM_Side", up((8, 0, 0.6)), up((0, 0, 0.6)), ortho=3.6 * k)
+    _cam(scn, prefix + "CAM_Top", (0, 0, 8 * k + lift), (0, 0.0001, 0), ortho=3.8 * k)
     _cam(scn, prefix + "CAM_34", up((3.6, -4.6, 2.7)), up((0, -0.1, 0.45)), lens=55)
     _cam(scn, prefix + "CAM_Face", up((0.9, -2.1, 1.05)), up((0, -0.62, 0.58)), lens=70)
     _cam(scn, prefix + "CAM_Low", up((2.2, -2.9, 0.35)), up((0, -0.2, 0.55)), lens=40)
@@ -95,7 +96,8 @@ def add_ground(scn, size=12.0):
     return ob
 
 
-def shot(cam="CAM_34", name=None, engine='BLENDER_WORKBENCH', res=1000, scene=None, color='TEXTURE', frame=None):
+def shot(cam="CAM_34", name=None, engine='BLENDER_WORKBENCH', res=1000, scene=None, color='TEXTURE', frame=None,
+         res_y=None):
     scn = scene or bpy.context.scene
     prev_cam, prev_engine = scn.camera, scn.render.engine
     scn.camera = bpy.data.objects[cam]
@@ -114,7 +116,7 @@ def shot(cam="CAM_34", name=None, engine='BLENDER_WORKBENCH', res=1000, scene=No
         sh.show_shadows = False
         sh.show_object_outline = False
     scn.render.resolution_x = res
-    scn.render.resolution_y = res
+    scn.render.resolution_y = res_y or res
     scn.render.film_transparent = False
     os.makedirs(RENDERS, exist_ok=True)
     path = os.path.join(RENDERS, (name or cam) + ".png")

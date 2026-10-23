@@ -105,20 +105,24 @@ def to_basis(rig, desired, R=None):
     return basis, world
 
 
-def apply_pose(rig, desired, frame=None, R=None, keys=True):
+def apply_pose(rig, desired, frame=None, R=None, keys=True, scaled=()):
+    """scaled: bones whose scale is posed and keyed too (the broodmother's swelling abdomen, her laid egg); every other
+    bone keeps scale 1 and gets no scale keys."""
     basis, world = to_basis(rig, desired, R)
     for n, m in basis.items():
         pb = rig.pose.bones[n]
-        loc, rot, _ = m.decompose()
+        loc, rot, sca = m.decompose()
         pb.location = loc
         q = rot
         if keys and frame is not None and pb.rotation_quaternion.dot(q) < 0:
             q = -q                      # keep quaternions on one hemisphere so the curves don't flip
         pb.rotation_quaternion = q
-        pb.scale = (1, 1, 1)
+        pb.scale = sca if n in scaled else (1, 1, 1)
         if keys and frame is not None:
             pb.keyframe_insert("location", frame=frame, group=n)
             pb.keyframe_insert("rotation_quaternion", frame=frame, group=n)
+            if n in scaled:
+                pb.keyframe_insert("scale", frame=frame, group=n)
     return world
 
 

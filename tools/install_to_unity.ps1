@@ -1,11 +1,12 @@
 <#
 Copies the insectoids into a Unity project, under Assets/Insectoids:
   unity/Insectoids/Runtime, Editor        -> Assets/Insectoids/Scripts/Runtime, Editor
-  export/<Creature>.fbx (Spider, Wasp)    -> Assets/Insectoids/Models
+  export/<Creature>.fbx (Spider, Spiderling, Broodmother, Wasp, Centipede, SpiderEgg_*) -> Assets/Insectoids/Models
   export/Anims/<Creature>@*.fbx, *.json   -> Assets/Insectoids/Models/Anims
   textures/T_*.png                        -> Assets/Insectoids/Textures
 Files are overwritten in place; their .meta files (import settings, prefab references) are kept.
-Afterwards, in Unity: Tools > Insectoids > Rebuild Spider / Rebuild Wasp (each runs by itself the first time).
+Afterwards, in Unity: Tools > Insectoids > Rebuild Spider / Wasp / Centipede / Spider Eggs / Spiderling / Broodmother
+(each runs by itself the first time, if the editor is in the foreground).
 
 Usage:
   powershell -ExecutionPolicy Bypass -File tools\install_to_unity.ps1 -Project E:\Unity\Projects\MedievalSetting
@@ -37,4 +38,4 @@ if (-not $ScriptsOnly) {
     Copy-Into (Join-Path $root 'export\Anims') '*.json' (Join-Path $dst 'Models\Anims')
     Copy-Into (Join-Path $root 'textures') 'T_*.png' (Join-Path $dst 'Textures')
 }
-Write-Host 'Done. In Unity: Tools > Insectoids > Rebuild Spider / Rebuild Wasp'
+Write-Host 'Done. In Unity: Tools > Insectoids > Rebuild Spider Eggs, then Rebuild Spiderling and Rebuild Broodmother (and Spider / Wasp / Centipede)'

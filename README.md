@@ -1,14 +1,15 @@
 # Insectoids
 
-Giant bugs for the colony sim, built procedurally in Blender: the **giant hunting spider**, the **giant wasp** and the
-**giant centipede**.
+Giant bugs for the colony sim, built procedurally in Blender: the **giant hunting spider** and its family (the
+**spiderling**, the **broodmother** and **spider eggs**), the **giant wasp** and the **giant centipede**.
 The spider is horse-sized,
 rideable (saddle socket), Unity Generic rig, hand-painted texture, nine custom clips. The leg IK, gait generator and
 rigid-segment construction are meant to carry over to the next bugs (ants, beetles, mantis...).
 
 ![The test scene in Unity: spiders spitting web, wasps stinging, goblins around them](docs/images/test_scene.png)
 
-Blender file: `blender/insectoids.blend` (saved compressed), scenes **Spider**, **Wasp** and **Centipede**. Everything in
+Blender file: `blender/insectoids.blend` (saved compressed), scenes **Spider**, **Spiderling**, **Broodmother**,
+**SpiderEggs**, **Wasp** and **Centipede**. Everything in
 it is rebuilt from `src/`.
 
 ## Rebuild
@@ -109,7 +110,8 @@ powershell -ExecutionPolicy Bypass -File tools\install_to_unity.ps1 -Project E:\
 ```
 
 It copies scripts, models, clips, the clip JSON and textures under `Assets/Insectoids` and keeps existing `.meta`
-files. **Tools > Insectoids > Rebuild Spider** / **Rebuild Wasp** then build everything (each runs by itself the first
+files. **Tools > Insectoids > Rebuild Spider** / **Rebuild Wasp** / **Rebuild Centipede** / **Rebuild Spider Eggs** /
+**Rebuild Spiderling** / **Rebuild Broodmother** then build everything (each runs by itself the first
 time); reports and renders go to `Logs/SpiderSetup` and `Logs/WaspSetup`. Shared editor code is in `InsectSetupUtil`.
 
 | `Assets/Insectoids/...` | Contents |
@@ -253,6 +255,122 @@ GameObject while it is underground to surface elsewhere. In the test scene a bur
 underground (`InsectAnimationSet.Pool.relocate`) and comes back out 1.5 s later. Checked in Unity: Walk/Run root motion 1.5 / 4 m/s straight ahead with the head within 2 / 6 mm of its
 place across loops; burrow effect and events in Play mode with no console errors.
 
+## The spider family
+
+![Eggs, spiderling, giant spider and broodmother from the game camera (22 m, 50 deg pitch, fov 30)](docs/images/spider_family_22m.png)
+![The same, 12 m away](docs/images/spider_family.png)
+
+Daniel's card game has four spider units: eggs, spiderlings, the adult and the broodmother. The spiderling and the
+broodmother are the giant spider rebuilt with other numbers, not copies of it: `spider_body.Kind` describes a member of
+the family as changes to the adult (size, the carapace and abdomen reshaped about the pedicel, leg length and
+thickness, stance, resolution, extra parts and bones), and the same body, rig, IK, gait, clip, paint and export code
+builds all three. `spider_body.use(name)` picks the kind; the adult is the default and builds bit for bit as before
+(checked: mesh, weights, UVs, bones, every key of the ten clips, the data bakes and both paints). Clip settings per kind
+(fps, tempo on the adult's clips, gaits, own clips) are `spider_anim.FAMILY`; paint styles `spider_paint.STYLE`.
+
+Headless (the live Blender stays free), in `blender/insectoids.blend`:
+
+```
+blender -b --factory-startup blender/insectoids.blend --python tools/spider_family_run.py -- Spiderling build review lowest trace sheets export
+blender -b --factory-startup blender/insectoids.blend --python tools/spider_family_run.py -- Broodmother build review lowest trace sheets export
+blender -b --factory-startup blender/insectoids.blend --python tools/spider_family_run.py -- SpiderEggs props export
+blender -b --factory-startup blender/insectoids.blend --python tools/spider_family_run.py -- Family lineup nosave
+```
+
+or inside Blender, with the kind's scene on screen: `spider_build.build_all(kind="Spiderling")`,
+`spider_build.export("Spiderling")`, `spider_eggs.build_props()`, `spider_eggs.export_props()`.
+
+| Script | Does |
+|---|---|
+| `spider_body.py` | `Kind`, the three kinds, the broodmother's extras (egg sacs, spines, the egg she lays on `SpawnEgg`) |
+| `spider_anim.py` | `FAMILY` (clips, fps, tempo, gaits, tweaks per kind), the slump death, the broodmother's Spawn |
+| `spider_paint.py` | paint in the adult's coordinates for every kind, styles `juvenile` and `brood` |
+| `spider_eggs.py` | the leathery egg shape (shared), the three egg props, their paint and export |
+| `spider_build.py` | `build_all(kind=...)`, `export(kind)`, review renders, lowest vertex per clip, root-motion trace, the family lineup |
+| `tools/spider_family_run.py` | the headless driver |
+| `tools/spider_adult_check.py` | proves the adult still builds bit for bit as before (dump + compare) |
+
+All three spiders share the skeleton layout (`Motion` beside `Root` > `Body` ...; the broodmother adds `SpawnEgg`), the
+sockets and the clip conventions of the adult (30 or 60 fps, root motion on `Motion` only, events `OnInsectEvent`).
+Feet: the kinds lift planted tarsus tips by `Kind.foot_z` (the tip's mesh rests on the ground), keep the planted tarsus
+angle against the world when the body tilts (`level_feet`) and never let a foot target dip below the ground (the key
+tracks' spline overshoots; the adult's feet still go 3-8 cm under in some clips, left as they are).
+
+**In Unity** (after `tools/install_to_unity.ps1`): **Tools > Insectoids > Rebuild Spider Eggs**, **Rebuild Spiderling**
+and **Rebuild Broodmother** (each runs by itself the first time) make:
+
+| `Assets/Insectoids/...` | Contents |
+|---|---|
+| `Prefabs/SpiderEgg_Clutch`, `_Single`, `_Hatched` | static props, `M_SpiderEggs` |
+| `Prefabs/Spider_Spiderling` | Animator + `InsectAppearance` (skins base x2, Amber, Dusky; 0.85-1.15x) + `InsectEvents` |
+| `Prefabs/Spider_Broodmother` | Animator + `InsectAppearance` (base x2, Ashen; 0.92-1.08x) + `InsectEvents` + `SpiderBrood` (Spawn puts down `SpiderEgg_Single`) |
+| `Animation/SpiderlingAnims`, `BroodmotherAnims` | clip pools for `InsectRandomAnimator` (Death holds, then back to Idle: no GetUp clips) |
+
+and add 4 spiderlings, a broodmother and 5 egg props to `Scenes/Insectoids_Test`. Reports and renders go to
+`Logs/SpiderlingSetup`, `Logs/BroodmotherSetup` and `Logs/SpiderEggsSetup` (`family_game_22m.png`: the four at the game
+camera). The scripts compile against MedievalSetting's editor (checked offline); they have not been run in Unity yet.
+
+### The spiderling
+
+- **Size:** a third of the adult (`size` 0.36), dog-sized: 0.73 m from fangs to spinnerets, back 0.34 m, 0.7 m
+  across the legs (the adult: 1.75 m, 0.88 m, 2.2 m). Juvenile proportions: carapace x1.12, abdomen x1.28 / 1.2 / 1.3 (wide, long, tall), legs 0.84 as
+  long and 0.72 as thick, eyes x1.25, no leg spines.
+- **Look:** pale sand and cream with amber legs between pale joints, a darker heart mark showing through the abdomen,
+  a milky sheen on top, warm (subsurface) shadows instead of cool ones, glossy (smoothness ~0.42), the skull only
+  faint (0.45 strength). `T_Spiderling` 512.
+- **Budget:** 1,996 triangles (legs 1,232 at 3-5 sides, abdomen 240, carapace 160, palps 128, chelicerae 100, fangs
+  44, eyes 52, pedicel 24, spinnerets 16). 58 bones, the adult's.
+
+| Clip | Length | What happens | Event |
+|---|---|---|---|
+| `Idle` | 2.1 s loop (60 fps) | the adult's idle faster, twitchier palps, a glance aside | |
+| `Walk` | 0.33 s loop | skittering tetrapod gait, root motion 0.97 m/s | |
+| `Run` | 0.2 s loop | root motion 2.43 m/s, low | |
+| `Hit` | 0.37 s | jolts back | |
+| `Death` | 1.67 s | sinks onto its belly, legs fold up and in, a last twitch curls them | Dead 1.4 s |
+| `Bite` | 0.83 s | pulls back, lunges, front feet pin closer than the adult's (shorter legs) | Bite 0.35 s |
+
+### The broodmother
+
+- **Size:** 1.8x the adult (`size` 1.8): 3.7 m from fangs to spinnerets, the abdomen 1.9 m high (2.1 m to the tips
+  of her spines), 4.1 m across the legs. Abdomen bloated (x1.5 wide, x1.3 long, x1.55 tall), legs 0.96 as long and 1.3x as thick, a wider stance,
+  the body lower, bigger leg spines.
+- **Silhouette:** a crown of 15 silk egg sacs over the rear of the back and down both flanks (off the skull), three
+  pairs of big curved spines on the abdomen's shoulders, a short ridge of spines on the carapace.
+- **Look:** darker and older than the adult: greying hairs, healed scars on the carapace and abdomen, worn pale leg
+  tips, silk wisps on the rear of the abdomen; the skull at full strength. Sacs off-white silk with stains and fibres.
+  `T_Broodmother` 1024.
+- **Budget:** 6,796 triangles (legs 2,960, leg spines 384, abdomen 912 at 24 sides, sacs 900, carapace 396, palps 312,
+  chelicerae 280, horns 256, eyes 148, laid egg 112, others 136). 59 bones: the adult's plus `SpawnEgg`.
+- **Spawn:** `SpawnEgg` (child of `Abdomen`) carries the egg she lays; at rest it sits inside the abdomen behind the
+  spinnerets. Its scale and the abdomen's are keyed (Kind.scaled); every other bone keeps scale 1.
+
+| Clip | Length | What happens | Event |
+|---|---|---|---|
+| `Idle` | 3.9 s loop | the adult's idle slowed, the abdomen breathing (scale) | |
+| `Walk` | 1.33 s loop | heavy gait (duty 0.7, low steps, more sway), root motion 1.15 m/s | |
+| `Hit` | 0.67 s | jolt, the abdomen shudders | |
+| `Death` | 2.6 s | too heavy to roll: sinks onto her belly, legs fold, leans over, the abdomen sags and goes slack | Dead 2.2 s |
+| `Bite` | 1.5 s | the adult's bite slowed, the abdomen kept up | Bite 0.63 s |
+| `Threat` | 3.13 s | rears, front legs high, the abdomen swells | |
+| `Spawn` | 4.2 s | the abdomen swells and pulses, she sinks and tips it down, an egg is squeezed out of the spinnerets, drops under `Socket_Spinneret`, shrinks away 2 frames later; she rises | Spawn 3.0 s |
+
+At the Spawn event the clip's egg lies on the ground exactly under `Socket_Spinneret` (0.15 m up, its centre); a game
+puts its own egg or spiderling there. In Unity `SpiderBrood` does that (`spawnPrefab`, `Spawned` event).
+
+### Spider eggs
+
+Static props, one material and one 512 texture (`T_SpiderEggs`), origin on the ground under the middle:
+
+| Prop | Triangles | What |
+|---|---|---|
+| `SpiderEgg_Clutch` | 1,410 | nine eggs piled on the ground (six leaning in, three on top), half sunk in a silk mat, five threads drawn over them; ~1.3 m across, 0.48 m high |
+| `SpiderEgg_Single` | 304 | one egg on a little silk pad, two threads: the egg the broodmother lays (same size, 0.38 x 0.30 m) |
+| `SpiderEgg_Hatched` | 316 | the bottom of an egg, torn open and empty (outer and inner shell, the torn edge peeling out), on a pad |
+
+Eggs are leathery cream with mottles, freckles and fine wrinkles, silk wisps painted over their lower halves; inside
+the hatched shell dark and wet. The egg shape (`spider_eggs.egg`) is shared with the broodmother's sacs and laid egg.
+
 ## Repository
 
 | Path | What |
@@ -263,6 +381,8 @@ place across loops; burrow effect and events in Play mode with no console errors
 | `textures/` | painted textures |
 | `unity/Insectoids/` | the Unity scripts (`Runtime/`, `Editor/`) |
 | `tools/install_to_unity.ps1` | copies all of it into a Unity project |
+| `tools/spider_family_run.py` | headless Blender driver for the spider family (build, checks, renders, export) |
+| `tools/spider_adult_check.py` | dumps the adult spider's build and compares two dumps (shared code must not change it) |
 | `docs/images/` | the pictures in this README |
 | `HANDOFF.md` | conventions, open issues and checks for whoever picks this up next |
 

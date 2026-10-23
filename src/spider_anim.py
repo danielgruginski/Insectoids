@@ -16,15 +16,20 @@ Clips (30 fps, spider faces -Y):
   Strike      1.33 s        rears up, front legs slam down (event 'Strike' at 0.73 s)
   WebSpit     1.6 s         abdomen arches up over the back, web glob launched (event 'Spit' at 0.67 s)
   Threat      2.4 s         reared up, front legs spread high, fangs flexing
+
+The family (spider_body.Kind) reuses all of this: offsets in the key-pose tracks and gaits are adult metres, scaled by
+the kind's size; FAMILY gives each kind its clips, fps, tempo (duration factor on the adult's clips) and gaits, and
+KIND_CLIPS the clips of its own (the broodmother's slump and Spawn). Actions are <Kind>_<clip> (the adult's bare).
 """
 import bpy, math, os
 import numpy as np
 from mathutils import Vector, Matrix
 from bug_common import ROOT
 import spider_body as SB
+import spider_eggs as SE
 import bug_rig
 
-FPS = 30
+FPS = 30                       # the adult's; a kind's comes from FAMILY (clip_fps())
 EXPORT = os.path.join(ROOT, "export")
 LEG_KEYS = [(s, i) for s in (1, -1) for i in range(4)]
 EVENTS = {"Bite": [("Bite", 0.50)], "Strike": [("Strike", 0.73)], "WebSpit": [("Spit", 0.67)],
@@ -57,6 +62,9 @@ class SpiderPose:
         self.chel = [0.0, 0.0]                 # chelicerae: forward swing, spread (degrees)
         self.fang = 0.0                        # fangs unfold (degrees)
         self.palp = {1: [0.0, 0.0, 0.0], -1: [0.0, 0.0, 0.0]}   # added to the palp angles
+        self.abd_scale = 1.0                   # abdomen swelling (kinds with Abdomen in Kind.scaled)
+        self.egg = None                        # the broodmother's laid egg: (out along SpawnEgg +Y in m, drop 0..1,
+                                               # scale, ground matrix root-local or None); None = at rest inside
 
 
 def _euler(pitch, yaw, roll):
@@ -76,7 +84,9 @@ _REST = {}
 
 
 def rest_data():
-    if not _REST:
+    if _REST.get('kind') != SB.K.name:
+        _REST.clear()
+        _REST['kind'] = SB.K.name
         B = SB.rest_bones()
         _REST['B'] = B
         _REST['pivot'] = B['Body'][0].copy()
@@ -104,8 +114,12 @@ def leg_solution(p, s, i, MB):
         M = Matrix.Translation(p.root) @ Matrix.Rotation(rad(p.root_yaw), 4, 'Z')
         tgt = M @ foot
     tl = MB.inverted() @ Vector(tgt)
-    e_r, ang = SB.solve_leg(C, Ls, tl, tarsus=rad(cmd.tarsus) if cmd.tarsus is not None else SB.TARSUS_PLANT,
-                            femur_pref=rad(cmd.femur) if cmd.femur is not None else fp, side=s)
+    tars = rad(cmd.tarsus) if cmd.tarsus is not None else SB.TARSUS_PLANT
+    if SB.K.level_feet:                                  # the angle is against the world: undo the body's tilt
+        dh = Vector(((tl - C).x, (tl - C).y, 0.0))
+        if dh.length > 1e-4:
+            tars -= math.asin(max(-1.0, min(1.0, (MB.to_3x3() @ dh.normalized()).z)))
+    e_r, ang = SB.solve_leg(C, Ls, tl, tarsus=tars, femur_pref=rad(cmd.femur) if cmd.femur is not None else fp, side=s)
     psi = _yaw_of(e_r, s)
     if cmd.fk is not None and cmd.w > 0:
         w = cmd.w
@@ -124,7 +138,8 @@ def pose_matrices(p):
     MB = M @ BT
     out = {"Root": M @ R("Root"), "Body": MB @ R("Body")}
     ped = D['ped']
-    out["Abdomen"] = MB @ Matrix.Translation(ped) @ _euler(-p.abd[0], p.abd[1], p.abd[2]) @ Matrix.Translation(-ped) @ R("Abdomen")
+    A = MB @ Matrix.Translation(ped) @ _euler(-p.abd[0], p.abd[1], p.abd[2]) @ Matrix.Translation(-ped) @ R("Abdomen")
+    out["Abdomen"] = A if p.abd_scale == 1.0 else A @ Matrix.Scale(p.abd_scale, 4)
     for s in (1, -1):
         sfx = 'L' if s > 0 else 'R'
         ch = MB @ R(f"Chelicera{sfx}") @ Matrix.Rotation(rad(-p.chel[0]), 4, 'X') @ Matrix.Rotation(rad(s * p.chel[1]), 4, 'Z')
@@ -132,15 +147,24 @@ def pose_matrices(p):
         rel = R(f"Chelicera{sfx}").inverted() @ R(f"Fang{sfx}")
         out[f"Fang{sfx}"] = ch @ rel @ Matrix.Rotation(rad(s * p.fang), 4, 'Z')
         pc = SB.PALP
-        C = Vector(pc['C']) * Vector((s, 1, 1)) + Vector((0, 0, SB.LIFT))
+        pn = [f"Palp{sfx}_{nm}" for nm in ('Femur', 'Tibia', 'Tarsus')]
+        C = B[pn[0]][0]                                    # the kind's palp base and lengths
         e_r = _e_r(rad(pc['yaw']), s)
         ang = [rad(a + d) for a, d in zip(pc['angles'], p.palp[s])]
-        for k, (h, fr) in enumerate(SB.leg_frames(C, pc['L'], e_r, ang)[:3]):
+        for k, (h, fr) in enumerate(SB.leg_frames(C, tuple(B[n][2] for n in pn), e_r, ang)[:3]):
             out[f"Palp{sfx}_{('Femur', 'Tibia', 'Tarsus')[k]}"] = MB @ bug_rig.frame_matrix(h, fr)
     for s, i in LEG_KEYS:
         fr = leg_solution(p, s, i, MB)
         for j, seg in enumerate(SB.SEG_NAMES):
             out[SB.leg_name(i, s, seg)] = MB @ bug_rig.frame_matrix(fr[j][0], fr[j][1])
+    if p.egg is not None and "SpawnEgg" in B:
+        o, drop, sc, G = p.egg
+        E = out["Abdomen"] @ (R("Abdomen").inverted() @ R("SpawnEgg")) @ Matrix.Translation((0, o, 0))
+        loc, rot, _ = E.decompose()
+        if G is not None and drop > 0:
+            gl, gr, _ = (M @ G).decompose()
+            loc, rot = loc.lerp(gl, drop), rot.slerp(gr, drop)
+        out["SpawnEgg"] = Matrix.Translation(loc) @ rot.to_matrix().to_4x4() @ Matrix.Scale(max(sc, 1e-4), 4)
     # the skeleton plays in place; only the Motion bone travels (Unity turns it into root motion)
     Minv = M.inverted()
     out = {k: Minv @ v for k, v in out.items()}
@@ -211,18 +235,20 @@ def gait(f, N, stride, duty, lift, lag=0.07, move=True):
             z = lift * math.sin(math.pi * q) ** 0.8
             tars, sw = -36.0 - 34.0 * math.sin(math.pi * q), math.sin(math.pi * q)
         tgt = root + F0 + fwd * exc * u
-        tgt.z = z
+        tgt.z = F0.z + z
         out[(s, i)] = (tgt, tars)
         swing[(s, i)] = sw
     return root, out, swing
 
 
 def gait_pose(f, N, stride, duty, lift, body_z=0.0, pitch=0.0, bob=0.012, sway=1.5, abd_swing=2.5, move=True):
+    """Distances in adult metres (scaled by the kind's size)."""
+    k = SB.K.size
     p = SpiderPose()
-    root, feet, swing = gait(f, N, stride, duty, lift, move=move)
+    root, feet, swing = gait(f, N, stride * k, duty, lift * k, move=move)
     p.root = root
     ph = 2 * math.pi * f / N
-    p.body = Vector((0, 0, body_z - bob * math.cos(2 * ph)))
+    p.body = Vector((0, 0, body_z * k - bob * k * math.cos(2 * ph)))
     p.pitch = pitch + 0.8 * math.sin(2 * ph)
     p.roll = sway * math.sin(ph)
     p.yaw = 1.2 * sway * math.sin(ph + 0.6)
@@ -243,8 +269,10 @@ def keyed_pose(f, tracks, loop=None):
     clip in tracks['fk'][(s, i)] = (yaw, angles)."""
     p = SpiderPose()
     g = lambda k, d: track(tracks[k], f, loop) if k in tracks else d
-    p.root = Vector(g('root', (0, 0, 0)))
-    p.body = Vector(g('body', (0, 0, 0)))
+    sz = SB.K.size                                       # offsets are adult metres
+    p.root = Vector(g('root', (0, 0, 0))) * sz
+    p.body = Vector(g('body', (0, 0, 0))) * sz
+    p.abd_scale = g('abs', 1.0)
     p.pitch, p.yaw, p.roll = g('pitch', 0.0), g('yaw', 0.0), g('roll', 0.0)
     p.abd = list(np.atleast_1d(g('abd', (0.0, 0.0, 0.0))))
     p.chel = list(np.atleast_1d(g('chel', (0.0, 0.0))))
@@ -254,12 +282,16 @@ def keyed_pose(f, tracks, loop=None):
     fk = tracks.get('fk', {})
     for s, i in LEG_KEYS:
         key = f"{'L' if s > 0 else 'R'}{i + 1}"
-        off = Vector(g('lt:' + key, (0, 0, 0)))
-        tgt = p.root + neutral_foot(s, i) + Vector((off.x * s, off.y, off.z))
+        off = Vector(g('lt:' + key, (0, 0, 0))) * sz
+        F0 = neutral_foot(s, i)
+        tgt = p.root + F0 + Vector((off.x * s, off.y, off.z))
+        if SB.K.level_feet and tgt.z < F0.z:              # the tracks' spline overshoots: never below the ground
+            tgt.z = F0.z
         w = g('lw:' + key, 0.0)
         tars = g('ta:' + key, -36.0)
         yaw, ang = fk.get((s, i), (None, None))
-        p.legs[(s, i)] = Leg(target=tgt, tarsus=tars, fk=ang, fk_yaw=yaw, w=max(0.0, min(1.0, w)))
+        p.legs[(s, i)] = Leg(target=tgt, tarsus=tars, femur=g('fe:' + key, None), fk=ang, fk_yaw=yaw,
+                             w=max(0.0, min(1.0, w)))
     return p
 
 
@@ -279,18 +311,22 @@ def _clip_idle():
         'lt:R2': [(0, (0, 0, 0)), (62, (0, 0, 0)), (68, (-0.02, -0.04, 0.10)), (74, (0, 0, 0)), (90, (0, 0, 0))],
         'ta:R2': [(0, -36.0), (62, -36.0), (68, -60.0), (74, -36.0), (90, -36.0)],
     }
+    T = _tweak("Idle", T)
     return N, lambda f: keyed_pose(f, T, loop=N), True
 
 
+def _gait(name):
+    g = dict(family()['gait'][name])
+    N = g.pop('N')
+    return N, lambda f: gait_pose(f, N, **g), True
+
+
 def _clip_walk():
-    N = 24
-    return N, lambda f: gait_pose(f, N, stride=1.0, duty=0.62, lift=0.16), True
+    return _gait("Walk")
 
 
 def _clip_run():
-    N = 12
-    return N, lambda f: gait_pose(f, N, stride=1.5, duty=0.5, lift=0.13, body_z=-0.05, pitch=-3.0, bob=0.018,
-                                  sway=2.5, abd_swing=4.0), True
+    return _gait("Run")
 
 
 RAISED = (-8, 78, 34, -6, -34)             # a front leg held high
@@ -310,6 +346,7 @@ def _clip_hit():
         'lt:L1': [(0, (0, 0, 0)), (4, (0, 0.05, 0.08)), (9, (0, 0.02, 0)), (15, (0, 0, 0))],
         'lt:R1': [(0, (0, 0, 0)), (5, (0, 0.04, 0.06)), (10, (0, 0.02, 0)), (15, (0, 0, 0))],
     }
+    T = _tweak("Hit", T)
     return N, lambda f: keyed_pose(f, T), False
 
 
@@ -340,6 +377,7 @@ def _clip_bite():
         'lt:R2': [(0, (0, 0, 0)), (14, (0, -0.25, 0.12)), (17, (0, -0.28, 0)), (30, (0, -0.25, 0)), (35, (0, -0.1, 0.08)),
                   (36, (0, 0, 0))],
     }
+    T = _tweak("Bite", T)
     return N, lambda f: keyed_pose(f, T), False
 
 
@@ -369,6 +407,7 @@ def _clip_strike():
                   (40, (0, 0, 0))],
         'ta:L1': [(0, -36.0), (22, -36.0)], 'ta:R1': [(0, -36.0), (22, -36.0)],
     }
+    T = _tweak("Strike", T)
     return N, lambda f: keyed_pose(f, T), False
 
 
@@ -389,6 +428,7 @@ def _clip_webspit():
         'lt:R4': [(0, (0, 0, 0)), (8, (0.05, 0.05, 0.12)), (12, (0.12, 0.14, 0)), (42, (0.12, 0.14, 0)),
                   (46, (0.06, 0.06, 0.10)), (48, (0, 0, 0))],
     }
+    T = _tweak("WebSpit", T)
     return N, lambda f: keyed_pose(f, T), False
 
 
@@ -420,6 +460,7 @@ def _clip_threat():
         'lt:R3': [(0, (0, 0, 0)), (7, (0, -0.05, 0.10)), (12, (0, -0.10, 0)), (62, (0, -0.10, 0)), (66, (0, -0.05, 0.08)),
                   (72, (0, 0, 0))],
     }
+    T = _tweak("Threat", T)
     return N, lambda f: keyed_pose(f, T), False
 
 
@@ -445,6 +486,7 @@ def _clip_death():
         d = 2 * i + (0 if s > 0 else 1)
         T['lw:' + key] = [(0, 0.0), (12 + d, 0.15), (24 + d, 0.75), (40, 1.0), (47, 0.9), (54 + (d % 3), 1.0), (60, 1.0)]
         T['lt:' + key] = [(0, (0, 0, 0)), (16, (0.08, 0.0, 0)), (60, (0.08, 0.0, 0))]
+    T = _tweak("Death", T)
     return N, lambda f: keyed_pose(f, T), False
 
 
@@ -467,6 +509,7 @@ def _clip_getup():
         d = 2 * i + (0 if s > 0 else 1)
         T['lw:' + key] = [(0, 1.0), (4 + d // 2, 1.0), (16 + d, 0.45), (26 + d // 2, 0.0), (40, 0.0)]
         T['lt:' + key] = [(0, (0.08, 0.0, 0)), (24, (0.04, 0.0, 0.05)), (32 + d // 2, (0, 0, 0)), (40, (0, 0, 0))]
+    T = _tweak("GetUp", T)
     return N, lambda f: keyed_pose(f, T), False
 
 
@@ -474,22 +517,220 @@ CLIPS = {"GetUp": _clip_getup, "Idle": _clip_idle, "Walk": _clip_walk, "Run": _c
          "Bite": _clip_bite, "Strike": _clip_strike, "WebSpit": _clip_webspit, "Threat": _clip_threat}
 
 
+# ----------------------------------------------------------------------------------------- the broodmother's own clips
+def _own(N30, pose30, loop=False):
+    """A kind's own clip written in 30 fps frames, played at the kind's fps."""
+    k = clip_fps() / 30.0
+    if k == 1.0:
+        return N30, pose30, loop
+    return int(round(N30 * k)), (lambda f: pose30(f / k)), loop
+
+
+def _clip_slump(N30=78, drop=0.31, roll=11.0, curl=0.0, sag=-9.0, nose=-7.0, recoil=-9.0):
+    """Death without the roll (the adult's roll puts its legs through the ground, and a bloated broodmother can't
+    turn over): recoils, the legs give way and fold up (knees high, feet drawn in), it sinks onto its belly and leans
+    over, the abdomen sags onto the ground and goes slack; with `curl`, the legs then twitch in toward the body.
+    Distances in adult metres, frames at 30 fps for N30 = 78 (stretched to N30)."""
+    k = N30 / 78.0
+    F = lambda f: f * k
+    r = roll / 11.0
+    sx = 0.03 if roll >= 0 else -0.03
+    T = {
+        'body': [(F(0), (0, 0, 0)), (F(6), (0, 0.05, 0.06)), (F(20), (0, 0.02, -drop * 0.32)),
+                 (F(32), (sx * 0.6, 0.0, -drop * 0.77)), (F(44), (sx, -0.01, -drop)), (F(52), (sx, -0.01, -drop * 0.95)),
+                 (F(60), (sx, -0.01, -drop)), (F(78), (sx, -0.01, -drop))],
+        'pitch': [(F(0), 0.0), (F(6), 9.0), (F(20), -3.0), (F(36), nose), (F(78), nose)],
+        'roll': [(F(0), 0.0), (F(6), -3.0 * r), (F(26), 5.0 * r), (F(44), 11.0 * r), (F(52), 9.5 * r), (F(60), 11.0 * r),
+                 (F(78), 11.0 * r)],
+        'abd': [(F(0), (0, 0, 0)), (F(6), (recoil, 0, 0)), (F(24), (-3, 3, 0)), (F(44), (sag + 1, 6, 6)), (F(60), (sag, 6, 7)),
+                (F(78), (sag, 6, 7))],
+        'abs': [(F(0), 1.0), (F(40), 1.0), (F(62), 0.955), (F(78), 0.955)],
+        'chel': [(F(0), (0, 0)), (F(5), (-10, 16)), (F(30), (4, 6)), (F(78), (6, 4))],
+        'fang': [(F(0), 0.0), (F(5), 50.0), (F(30), 20.0), (F(78), 30.0)],
+        'palp': [(F(0), (0, 0, 0)), (F(5), (30, -20, -20)), (F(40), (28, 6, 14)), (F(78), (30, 12, 24))],
+    }
+    pull = {0: (-0.30, 0.22), 1: (-0.30, 0.10), 2: (-0.28, -0.08), 3: (-0.26, -0.18)}   # feet drawn in (adult m)
+    for s_, i in LEG_KEYS:
+        key = f"{'L' if s_ > 0 else 'R'}{i + 1}"
+        d = (2 * i + (0 if s_ > 0 else 1)) * k
+        px, py = pull[i]
+        lt = [(F(0), (0, 0, 0)), (F(14) + d, (0, 0, 0.05)), (F(24) + d, (px * 0.6, py * 0.6, 0)),
+              (F(46) + d / 2, (px, py, 0)), (F(78), (px, py, 0))]
+        ta = [(F(0), -36.0), (F(30), -45.0), (F(60), -62.0), (F(78), -62.0)]
+        if curl > 0:                                     # a last twitch: the feet curl up and in, off the ground
+            c = (px - 0.08 * curl, py * (1 - 0.3 * curl), 0.10 * curl)
+            lt = lt[:-1] + [(F(54) + d / 2, (px, py, 0)), (F(61) + d / 2, c),
+                            (F(65) + d / 2, (c[0] * 0.9, c[1], c[2] * 0.6)), (F(70) + d / 2, c), (F(78), c)]
+            ta = ta[:-1] + [(F(61) + d / 2, -110.0), (F(78), -110.0)]
+        T['lt:' + key] = lt
+        T['fe:' + key] = [(F(0), 50.0), (F(16) + d, 55.0), (F(40), 72.0), (F(78), 74.0)]
+        T['ta:' + key] = ta
+    return _own(N30, lambda f: keyed_pose(f, T))
+
+
+SPAWN_DROP, SPAWN_EVENT = 84, 90          # frames: the egg leaves the spinnerets, lands (event 'Spawn' 3.0 s)
+
+
+def _clip_spawn():
+    """Broodmother lays an egg: the abdomen swells and pulses, she sinks and tips the abdomen down, an egg is squeezed
+    out of the spinnerets, drops under Socket_Spinneret (event 'Spawn' as it lands) and is gone a frame later (a game
+    puts its own egg or spiderling there), she rises. The egg goes back inside at scale 0 and is scaled up hidden."""
+    N = 126
+    T = {
+        'body': [(0, (0, 0, 0)), (18, (0, 0, 0)), (46, (0, 0.03, -0.06)), (96, (0, 0.03, -0.06)), (116, (0, 0, 0)),
+                 (126, (0, 0, 0))],
+        'pitch': [(0, 0.0), (18, 0.0), (46, 2.0), (96, 2.0), (116, 0.0), (126, 0.0)],
+        'abd': [(0, (0, 0, 0)), (20, (3, 0, 0)), (48, (-3, 0, 0)), (70, (-3.5, 2, 0)), (92, (-3, 0, 0)), (114, (0, 0, 0)),
+                (126, (0, 0, 0))],
+        'abs': [(0, 1.0), (8, 1.05), (14, 0.995), (22, 1.06), (30, 1.0), (54, 1.0), (60, 1.06), (66, 0.99), (73, 1.07),
+                (79, 0.985), (85, 1.03), (92, 0.97), (110, 1.0), (126, 1.0)],
+        'chel': [(0, (0, 0)), (20, (-4, 6)), (60, (-6, 8)), (100, (-4, 6)), (126, (0, 0))],
+        'fang': [(0, 0.0), (20, 12.0), (74, 20.0), (100, 10.0), (126, 0.0)],
+        'palp': [(0, (0, 0, 0)), (20, (12, 8, 6)), (70, (18, 10, 10)), (100, (8, 4, 4)), (126, (0, 0, 0))],
+        # rear legs spread and brace, the third pair steps out
+        'lt:L4': [(0, (0, 0, 0)), (8, (0.04, 0.04, 0.12)), (14, (0.14, 0.12, 0)), (104, (0.14, 0.12, 0)),
+                  (110, (0.07, 0.06, 0.10)), (118, (0, 0, 0)), (126, (0, 0, 0))],
+        'lt:R4': [(0, (0, 0, 0)), (11, (0.04, 0.04, 0.12)), (17, (0.14, 0.12, 0)), (106, (0.14, 0.12, 0)),
+                  (112, (0.07, 0.06, 0.10)), (120, (0, 0, 0)), (126, (0, 0, 0))],
+        'lt:L3': [(0, (0, 0, 0)), (18, (0, 0, 0)), (24, (0.05, 0.02, 0.10)), (30, (0.09, 0.03, 0)), (100, (0.09, 0.03, 0)),
+                  (108, (0.04, 0.01, 0.08)), (116, (0, 0, 0)), (126, (0, 0, 0))],
+        'lt:R3': [(0, (0, 0, 0)), (21, (0, 0, 0)), (27, (0.05, 0.02, 0.10)), (33, (0.09, 0.03, 0)), (102, (0.09, 0.03, 0)),
+                  (110, (0.04, 0.01, 0.08)), (118, (0, 0, 0)), (126, (0, 0, 0))],
+    }
+    egg_out = [(0, 0.0), (54, 0.0), (SPAWN_DROP, 1.15)]          # x EGG_LEN, along the spinnerets' axis
+    egg_scale = [(0, 1.0), (54, 0.72), (SPAWN_DROP, 1.0), (SPAWN_EVENT, 1.0), (SPAWN_EVENT + 2, 0.0), (118, 0.0),
+                 (121, 1.0), (126, 1.0)]
+    L = SE.EGG_LEN
+    ground = {}
+
+    def lin(keys, f):
+        return float(np.interp(f, [k[0] for k in keys], [k[1] for k in keys]))
+
+    def pose(f):
+        p = keyed_pose(f, T)
+        if 'G' not in ground:                                     # the egg lands under the spinnerets' socket
+            q = keyed_pose(SPAWN_EVENT, T)
+            m = pose_matrices(q)
+            sock = m["Abdomen"] @ (bug_rig.frame_matrix(*rest_data()['B']["Abdomen"][:2]).inverted() @
+                                   bug_rig.frame_matrix(*rest_data()['B']["Socket_Spinneret"][:2]))
+            x, y = sock.translation.x, sock.translation.y
+            a = math.radians(12)
+            rot = Matrix(((math.cos(a), math.sin(a), 0), (-math.sin(a), math.cos(a), 0), (0, 0, 1))).transposed()
+            ground["G"] = Matrix.Translation((x, y, SE.EGG_W * 0.485)) @ rot.to_4x4()
+        if f <= SPAWN_EVENT + 2:
+            drop = ease((f - SPAWN_DROP) / (SPAWN_EVENT - 2 - SPAWN_DROP)) if f > SPAWN_DROP else 0.0
+            p.egg = (lin(egg_out, f) * L, drop, lin(egg_scale, f), ground['G'])
+        else:                                                     # gone: back inside, scaled up hidden
+            back = ease((f - SPAWN_EVENT - 3) / 20.0)
+            p.egg = (1.15 * L * (1 - back), 1.0 - back, lin(egg_scale, f), ground['G'])
+        return p
+    return N, pose, False
+
+
+KIND_CLIPS = {"Spiderling": {"Death": lambda: _clip_slump(N30=50, drop=0.24, roll=-6.0, curl=0.6, sag=12.0, nose=2.0)},
+              "Broodmother": {"Death": lambda: _clip_slump(drop=0.17, roll=9.0, sag=2.0, nose=-4.0, recoil=4.0), "Spawn": _clip_spawn}}
+
+# per kind: clips (in order), fps, tempo (duration factor on the adult's clip), gaits (adult metres, N in 30 fps frames),
+# events (seconds, for its own clips; the adult's EVENTS scale with the tempo), tweaks (tracks merged into adult clips),
+# which clips move (root motion)
+FAMILY = {
+    "Spider": dict(
+        clips=tuple(CLIPS), fps=30, tempo={}, events={}, tweaks={}, moving=("Walk", "Run"),
+        gait=dict(Walk=dict(N=24, stride=1.0, duty=0.62, lift=0.16),
+                  Run=dict(N=12, stride=1.5, duty=0.5, lift=0.13, body_z=-0.05, pitch=-3.0, bob=0.018, sway=2.5,
+                           abd_swing=4.0))),
+    "Spiderling": dict(
+        clips=("Idle", "Walk", "Run", "Hit", "Death", "Bite"), fps=60, moving=("Walk", "Run"),
+        tempo=dict(Idle=0.7, Hit=0.75, Bite=0.7), events=dict(Death=[("Dead", 1.4)]),
+        tweaks=dict(Idle={'palp': [(0, (0, 0, 0)), (10, (8, -10, -12)), (15, (0, 0, 0)), (30, (6, 6, 8)), (36, (0, 0, 0)),
+                                   (52, (10, -6, -8)), (57, (0, 0, 0)), (72, (5, 8, 8)), (77, (0, 0, 0)), (90, (0, 0, 0))],
+                          'yaw': [(0, 0.0), (40, 0.0), (43, 4.0), (60, 4.0), (63, 0.0), (90, 0.0)]},
+                    Bite={'body': [(0, (0, 0, 0)), (10, (0, 0.13, -0.03)), (15, (0, -0.34, 0.0)), (19, (0, -0.31, -0.03)),
+                                   (28, (0, -0.06, 0)), (36, (0, 0, 0))],
+                          'abd': [(0, (0, 0, 0)), (10, (8, 0, 0)), (15, (12, 0, 0)), (22, (4, 0, 0)), (36, (0, 0, 0))],
+                          'lt:L1': [(0, (0, 0, 0)), (13, (0, -0.22, 0.24)), (16, (0, -0.32, 0)), (26, (0, -0.25, 0)),
+                                    (32, (0, -0.07, 0.08)), (36, (0, 0, 0))],
+                          'lt:R1': [(0, (0, 0, 0)), (13, (0, -0.22, 0.24)), (16, (0, -0.32, 0)), (27, (0, -0.25, 0)),
+                                    (33, (0, -0.07, 0.08)), (36, (0, 0, 0))]}),
+        gait=dict(Walk=dict(N=10, stride=0.9, duty=0.6, lift=0.2, bob=0.014, sway=1.2, abd_swing=3.0),
+                  Run=dict(N=6, stride=1.35, duty=0.5, lift=0.16, body_z=-0.04, pitch=-3.0, bob=0.02, sway=2.0,
+                           abd_swing=4.5))),
+    "Broodmother": dict(
+        clips=("Idle", "Walk", "Hit", "Death", "Bite", "Threat", "Spawn"), fps=30, moving=("Walk",),
+        tempo=dict(Idle=1.3, Hit=1.3, Bite=1.25, Threat=1.3),
+        events=dict(Death=[("Dead", 2.2)], Spawn=[("Spawn", SPAWN_EVENT / 30.0)]),
+        tweaks=dict(Idle={'abs': [(0, 1.0), (45, 1.03), (90, 1.0)]},
+                    Threat={'abd': [(0, (0, 0, 0)), (12, (16, 0, 0)), (36, (20, 0, 0)), (60, (16, 0, 0)), (72, (0, 0, 0))],
+                            'abs': [(0, 1.0), (12, 1.06), (60, 1.06), (72, 1.0)]},
+                    Bite={'abd': [(0, (0, 0, 0)), (10, (12, 0, 0)), (15, (14, 0, 0)), (22, (6, 0, 0)), (36, (0, 0, 0))],
+                          'pitch': [(0, 0.0), (10, 5.0), (15, -10.0), (19, -8.0), (28, 0.0), (36, 0.0)],
+                          'body': [(0, (0, 0, 0)), (10, (0, 0.12, -0.02)), (15, (0, -0.30, 0.0)), (19, (0, -0.28, -0.03)),
+                                   (28, (0, -0.06, 0)), (36, (0, 0, 0))]},
+                    Hit={'abs': [(0, 1.0), (4, 0.97), (9, 1.02), (15, 1.0)],
+                         'abd': [(0, (0, 0, 0)), (4, (3, 4, 0)), (9, (5, -2, 0)), (15, (0, 0, 0))]}),
+        gait=dict(Walk=dict(N=40, stride=0.85, duty=0.7, lift=0.11, body_z=-0.01, bob=0.02, sway=2.2, abd_swing=3.5))),
+}
+
+
+def family():
+    return FAMILY[SB.K.name]
+
+
+def clip_fps():
+    return family()['fps']
+
+
+def clip_names():
+    return list(family()['clips'])
+
+
+def action_name(clip):
+    return SB.K.action_prefix + clip
+
+
+def _tweak(name, T):
+    tw = family()['tweaks'].get(name)
+    if tw:
+        T = dict(T)
+        T.update(tw)
+    return T
+
+
 # ----------------------------------------------------------------------------------------- build / export
 def rig():
-    return bpy.data.objects[bug_rig.RIG]
+    return bpy.data.objects[SB.K.rig]
+
+
+def clip_source(name):
+    """(N in frames at the clip's fps, pose function of the frame, loop, events in seconds) for the active kind: the
+    adult's clip played at the kind's tempo and fps, or the kind's own."""
+    fam = family()
+    own = KIND_CLIPS.get(SB.K.name, {})
+    if name in own:
+        N, fn, loop = own[name]()
+        return N, fn, loop, fam['events'].get(name, [])
+    N, fn, loop = CLIPS[name]()
+    k = fam['tempo'].get(name, 1.0) * fam['fps'] / 30.0
+    N2 = int(round(N * k))
+    evs = fam['events'].get(name) or EVENTS.get(name, [])
+    if N2 == N:
+        return N, fn, loop, evs
+    r = N / N2
+    return N2, (lambda f: fn(f * r)), loop, [(e, t * (N2 / fam['fps']) / (N / 30.0)) for e, t in evs]
 
 
 def build_clip(name, rig_ob=None):
     rig_ob = rig_ob or rig()
-    N, fn, loop = CLIPS[name]()
-    act = bpy.data.actions.get(name)
+    N, fn, loop, events = clip_source(name)
+    an = action_name(name)
+    act = bpy.data.actions.get(an)
     if act is not None:
         bpy.data.actions.remove(act)
-    act = bpy.data.actions.new(name)
+    act = bpy.data.actions.new(an)
     act.use_fake_user = True
     act["loop"] = loop
     act["frames"] = N
-    for ev, t in EVENTS.get(name, []):
+    for ev, t in events:
         act["event_" + ev] = t
     rig_ob.animation_data_create()
     rig_ob.animation_data.action = act
@@ -498,7 +739,7 @@ def build_clip(name, rig_ob=None):
         pb.rotation_mode = 'QUATERNION'
         pb.rotation_quaternion = (1, 0, 0, 0)
     for f in range(N + 1):
-        bug_rig.apply_pose(rig_ob, pose_matrices(fn(f)), frame=f, R=R)
+        bug_rig.apply_pose(rig_ob, pose_matrices(fn(f)), frame=f, R=R, scaled=SB.K.scaled)
     for fc in _fcurves(act):
         for k in fc.keyframe_points:
             k.interpolation = 'LINEAR'
@@ -519,13 +760,13 @@ def _fcurves(act):
 
 def build_clips(names=None):
     _REST.clear()
-    return {n: build_clip(n) for n in (names or CLIPS)}
+    return {n: build_clip(n) for n in (names or clip_names())}
 
 
 def use(name, rig_ob=None):
     """Show a clip on the rig and set the scene range to it."""
     rig_ob = rig_ob or rig()
-    act = bpy.data.actions[name]
+    act = bpy.data.actions[action_name(name)]
     rig_ob.animation_data_create()
     rig_ob.animation_data.action = act
     scn = bpy.context.scene

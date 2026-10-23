@@ -62,11 +62,76 @@ budget, clips). This file holds the working agreements, the conventions that bit
   themselves if copied without their setup, and their pools reset per Play session (works without domain reload).
 - **Clip keys are LINEAR on every frame** (57 bones x 7 channels = 399 F-curves per clip); the smoothing is in the
   key-pose tracks, not in Blender's curves.
+- **The adult must not move.** The spider family shares the adult's code (`spider_body.Kind`); every change to shared
+  code keeps the adult's floats bit for bit (identity reshapes return the same object, factors of 1.0, the old
+  expressions kept where float32 rounding differs). Check with `tools/spider_adult_check.py` against the last commit
+  after touching it.
+- **Key-pose tracks overshoot** (Catmull-Rom): a foot target keyed down to the ground dips below it between keys. The
+  adult's feet go 3-8 cm under in Idle/Hit/Bite/Strike and ~0.8 m during the Death/GetUp roll (legs through the
+  ground); left as they are. The kinds clamp planted targets to the ground (`Kind.level_feet`).
+- **BVH hits on a fresh bmesh come back with zero normals** unless `bm.normal_update()` ran first. The adult's eyes
+  rely on that (their direction is the ray's); the broodmother's sacs collapsed to lines until `_surface` updated
+  normals.
+- **float32 `sin(pi)` is negative** (-8.7e-8): `x ** 0.8` of it is NaN, and NaN paints black. Clamp before fractional
+  powers (the spiderling's heart mark).
+- **Headless Blender has no GPU drawing:** `bpy.ops.uv.export_layout` fails in `-b`; `spider_paint.draw_uv_layout`
+  rasterises the layout over the texture instead.
+- **Multi-object edit mode:** `bmesh.from_edit_mesh` handed back the wrong object's mesh after the UV operators; the
+  egg props scale their UV islands in object mode.
 
 ## State (2026-09-26)
 
 Spider, wasp and centipede: done in Blender and Unity (shared InsectSetupUtil, combined Insectoids_Test scene). Not a git repo yet; Daniel
 will make it once the creatures are done.
+
+2026-10-23: the spider family (spiderling, broodmother, egg props) built in Blender and exported, Unity setup scripts
+written and compile-checked offline, not yet installed or run in Unity; see the entry below. Git repo since 2026-10-06
+(danielgruginski/Insectoids, CC0); the family is in the working tree, not committed.
+
+## 2026-10-23: the spider family (spiderling, broodmother, eggs)
+
+Daniel: "Keep moving on the creatures", and earlier "don't bother with adding them to the game, build the creatures".
+His card game has four spider units: eggs, spiderlings, adult, broodmother. Built in Blender (headless, the live Blender
+was in use), exported, Unity scripts written and compile-checked; nothing copied into MedievalSetting, not committed.
+
+- **Parametrised, not copied:** `spider_body.Kind` (size, carapace/abdomen reshape about the pedicel, leg
+  length/thickness/stance, lift, resolution, extras, extra bones, `foot_z`, `level_feet`); `spider_anim.FAMILY` (clips,
+  fps, tempo on the adult's clips, gaits, track tweaks, own clips in `KIND_CLIPS`); `spider_paint.STYLE` (juvenile,
+  brood) with texels mapped back to the adult's coordinates (`to_adult`) so the markings land in the same places;
+  `spider_eggs.py` (egg shape, props). Scenes Spiderling, Broodmother, SpiderEggs in `blender/insectoids.blend`;
+  `tools/spider_family_run.py` drives it headless.
+- **Spiderling:** size 0.36, big head and abdomen, thin legs, pale/translucent paint, faint skull; 1,996 tris, 512
+  texture; Idle, Walk, Run, Hit, Death, Bite at 60 fps (skittering: walk 0.33 s, run 0.2 s).
+- **Broodmother:** 1.8x, bloated abdomen with 15 egg sacs, shoulder spines, carapace ridge, thick legs, old dark paint
+  with the skull; 6,796 tris, 1024; Idle, Walk, Hit, Death, Bite, Threat, Spawn at 30 fps. `SpawnEgg` bone + keyed
+  scale (`bug_rig.apply_pose(scaled=...)`) for the laid egg and the swelling abdomen; event Spawn (3.0 s) with the egg
+  on the ground under `Socket_Spinneret`.
+- **Eggs:** SpiderEgg_Clutch (1,410 tris), _Single (304, the laid egg), _Hatched (316), one 512 texture.
+- **Death without the roll** (`_clip_slump`) for both kinds: the adult's roll puts its legs through the ground, and a
+  bloated broodmother can't turn over.
+- **Checked:** the adult unchanged (dump of the rebuilt adult and of the saved .blend's Spider scene against the last
+  commit: identical); weights (0 unweighted, 0 over 4); lowest vertex per clip (spiderling: standing clips +0.2 mm,
+  Death -1.9 mm; broodmother: +0.8 mm, Death -0.4 mm, Spawn +0.7 mm); Walk/Run traced
+  (skeleton in place, Root fixed, no jump at the loop, planted feet 0.000 m/s slide, Motion 0.324 / 0.486 / 1.53 m
+  per loop straight ahead, also after an FBX re-import); the Spawn sequence frame by frame (abdomen, egg, socket
+  heights); close-ups, UV layouts and textures at full res; the four at the game camera; offline C# compile of the
+  repo's Runtime and Editor scripts against MedievalSetting's references (0 errors).
+- **How the adult check works:** `tools/spider_adult_check.py` (`dump` rebuilds the adult from a given `src` in an empty
+  Blender and saves mesh, UVs, seams, weights, info, bones, every F-curve key, a 256 bake and both paints to .npz;
+  `compare` diffs two dumps). Run it on the last commit's `src` (e.g. `git worktree add`) and the working tree's after
+  any change to shared spider code. The saved .blend's Spider scene was compared the same way (mesh, UVs, all ten
+  actions: identical).
+- **Gotchas found:** see Conventions (track overshoot, BVH zero normals, float32 sin NaN, headless UV export,
+  multi-edit bmesh). The adult's death roll legs through the ground is an old issue, not fixed for the adult.
+- **Open:**
+  - Not run in Unity: install, the three menu items, `setup_report.txt` (avatar valid, `dir=(0,0,1)`, the Spawn event,
+    `SpawnEgg` scale curves) and a Play-mode trace of Walk/Run are still to do.
+  - No GetUp for the kinds (the test scene pops them back to Idle after Death); no Run, Strike or WebSpit for the
+    broodmother; no Threat, Strike or WebSpit for the spiderling (not asked for).
+  - `SpiderBrood` only puts down the egg prop; hatching (egg -> SpiderEgg_Hatched + a spiderling) is game logic.
+  - The spiderling's leg joints are angular at 3-5 sides (budget); the brood's sacs are 6-sided and read faceted
+    close up.
+  - The adult's own feet (3-8 cm under in some clips) and death roll are unchanged on purpose.
 
 ## Open / next
 
@@ -90,6 +155,9 @@ will make it once the creatures are done.
   render from a scheduled `EditorApplication.update` callback with `RenderPipeline.SubmitRenderRequest`
   (`Unity_Camera_Capture` fails in play mode).
 - **Blender:** `spider_build.build_all()` report: `weights.unweighted == 0`, `over4 == 0`, triangle total.
+- **Family (headless):** `tools/spider_family_run.py -- <Kind> build lowest trace sheets` and read `lowest` (nothing
+  under 0 beyond a few mm) and `trace` (root_moves 0, body_loop_jump 0, planted_slide_mps 0, dir (0,-1,0)); `Family
+  lineup nosave` for `renders/family_game_22m.png`.
 - `bug_scene.render_sheet(clip, frames, cams=("CAM_Side", "CAM_34"), color='TEXTURE')` after `spider_anim.use(clip)`
   (`follow=True` keeps root-motion clips in frame).
 - Colony read: `bug_scene.shot("CAM_Colony", ...)`.

@@ -1,9 +1,13 @@
-"""Giant hunting spider: anatomy, leg IK and the game mesh, all built in the bind (standing) pose.
+"""Giant hunting spider and its family: anatomy, leg IK and the game mesh, all built in the bind (standing) pose.
 
 The spider faces -Y, left side +X, metres. Horse-sized: body ~1.65 m from fangs to spinnerets, back ~0.95 m high
 (abdomen top), ~3.2 m leg span. It is an exoskeleton, so every part is a rigid shell on one bone: legs are five
 lofted segments (coxa, femur, patella+tibia, metatarsus, tarsus) whose rounded proximal ends sit inside the
 flared end of the segment before, like real joints. Only the pedicel (waist) blends between two bones.
+
+The family (spiderling, broodmother) is the same anatomy changed by a `Kind` (see the end of the spec): the tables
+below are the adult's, in its metres; `use(name)` picks the kind that every function here (and spider_anim,
+spider_paint) builds. The adult is the default and builds exactly as before the kinds existed.
 
 Bone frames (armature space, rest):
   Body      head at the cephalothorax centre, +Y forward (world -Y), +Z up.
@@ -16,6 +20,7 @@ import numpy as np
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 from bug_common import loft, dome, cone, mesh_obj, get_coll, remove_obj, smoothstep
+import spider_eggs
 
 # ----------------------------------------------------------------------------------------- spec
 SEG_NAMES = ("Coxa", "Femur", "Tibia", "Metatarsus", "Tarsus")
@@ -86,9 +91,100 @@ FANG = dict(tip=(0.030, -0.772, 0.382), r=0.020)
 
 # part ids for painting (vertex attribute "info".r * 255)
 PART = dict(carapace=0, abdomen=1, pedicel=2, eye_big=3, eye_small=4, chelicera=5, fang=6, palp=7, spinneret=8,
-            spine=9, leg=10)          # leg segments: 10 + 5 * leg + segment
+            spine=9, leg=10,      # leg segments: 10 + 5 * leg + segment (10..29)
+            sac=40, horn=41, egg=42)   # the broodmother's egg sacs, abdomen spines + carapace ridge, the laid egg
+LEG_PARTS = (10, 30)
 
 LM = {}          # landmarks filled by the build (sockets, eyes, joints)
+
+
+# ----------------------------------------------------------------------------------------- the family
+class Kind:
+    """A member of the spider family, as changes to the adult (the tables above stay the adult's, in its metres).
+
+    Building one: the carapace (with the eyes, mouthparts and the leg sockets) and the abdomen are scaled about the
+    pedicel by `ceph` / `abd`, the body sits at `lift`, then everything is scaled by `size` about the ground. Legs get
+    `leg_len`, `leg_thick` and `foot` (stance radius); `femur` (degrees) is added to every knee's rise. `spines` scales
+    the legs' macrosetae (0 = none). Resolution (`seg`, `sides`, `profile`, the `ceph_rows` / `abd_rows` subsets,
+    `abd_per_seg`, `simple_mouth`) sets the triangle budget. `extras(bm, parts, bones, absolute)` adds parts,
+    `extra_bones(bones)` bones; `scaled` lists the bones whose scale the clips key. Clip settings (fps, tempo, gaits)
+    live in spider_anim, paint settings in spider_paint."""
+
+    def __init__(self, name, **kw):
+        self.name = name                     # FBX, scene, texture prefix; actions are <name>_<clip> (the adult's bare)
+        self.key = "SPD"                     # collection prefix
+        self.cams = ""                       # camera name prefix in its scene
+        self.size = 1.0
+        self.ceph = (1.0, 1.0, 1.0)
+        self.abd = (1.0, 1.0, 1.0)
+        self.lift = LIFT
+        self.leg_len = 1.0
+        self.leg_thick = 1.0
+        self.foot = 1.0
+        self.femur = 0.0
+        self.eye = 1.0
+        self.spines = 1.0
+        self.foot_z = 0.0                    # planted tarsus tips this high, so the tip's mesh rests on the ground
+        self.level_feet = False              # tarsus angle against the world, not the tilted body (clips)
+        self.seg = dict(ceph=16, abd=20, ped=8, chel=10, palp=6, eye_big=(10, 2), eye_small=(7, 1), fang=5,
+                        spinneret=5)
+        self.sides = SIDES_SEG
+        self.profile = PROFILE
+        self.ceph_rows = None
+        self.abd_rows = None
+        self.abd_per_seg = 1
+        self.simple_mouth = False
+        self.extras = None
+        self.extra_bones = None
+        self.scaled = ()
+        self.__dict__.update(kw)
+
+    body = property(lambda s: s.name + "Body")
+    rig = property(lambda s: s.name + "Rig")
+    action_prefix = property(lambda s: "" if s.name == "Spider" else s.name + "_")
+
+
+def _same(k):
+    return tuple(k) == (1.0, 1.0, 1.0)
+
+
+def _about(p, k):
+    """An adult point (unlifted) with the carapace or abdomen reshaped about the pedicel. Unchanged parts pass through
+    as the same object, so the adult's numbers stay bit for bit what they were."""
+    if _same(k):
+        return p
+    c = PEDICEL
+    return Vector((c.x + (p[0] - c.x) * k[0], c.y + (p[1] - c.y) * k[1], c.z + (p[2] - c.z) * k[2]))
+
+
+def _sized(v):
+    return v if K.size == 1.0 else v * K.size
+
+
+def _mean(k):
+    return (k[0] + k[1] + k[2]) / 3.0
+
+
+def _rows(rows, k):
+    """Loft rows (x, y, z, half-width, top, bottom) reshaped about the pedicel (adult unlifted space)."""
+    if _same(k):
+        return rows
+    out = []
+    for x, y, z, a, b, c in rows:
+        q = _about((x, y, z), k)
+        out.append((q.x, q.y, q.z, a * k[0], b * k[2], c * k[2]))
+    return out
+
+
+def _subset(rows, idx):
+    return rows if idx is None else [rows[i] for i in idx]
+
+
+def _ty(ab, k):
+    """A y range (adult) reshaped about the pedicel, for the paint's t axis."""
+    if _same(k):
+        return ab
+    return tuple(PEDICEL.y + (y - PEDICEL.y) * k[1] for y in ab)
 
 
 # ----------------------------------------------------------------------------------------- leg IK
@@ -166,13 +262,17 @@ def leg_frames(C, lengths, e_r, angles):
 
 
 def leg_spec(i, side):
-    """Rest data of leg i (0..3) on side +1 (left) / -1 (right)."""
+    """Rest data of leg i (0..3) on side +1 (left) / -1 (right), for the active kind."""
     s = LEGS[i]
-    C = Vector((side * s['C'][0], s['C'][1], s['C'][2] + LIFT))
+    if _same(K.ceph):
+        C = Vector((side * s['C'][0], s['C'][1], s['C'][2] + K.lift))
+    else:
+        C = _about(Vector((side * s['C'][0], s['C'][1], s['C'][2])), K.ceph) + Vector((0, 0, K.lift))
+    C = _sized(C)
     yaw = math.radians(s['yaw'])
-    foot = C + Vector((side * math.cos(yaw), -math.sin(yaw), 0.0)) * s['dist']
-    foot.z = 0.0
-    return C, seg_lengths(s['L']), foot, s['k'], math.radians(s['femur'])
+    foot = C + Vector((side * math.cos(yaw), -math.sin(yaw), 0.0)) * (s['dist'] * (K.foot * K.leg_len * K.size))
+    foot.z = K.foot_z
+    return C, seg_lengths(s['L'] * (K.leg_len * K.size)), foot, s['k'], math.radians(s['femur'] + K.femur)
 
 
 def leg_name(i, side, seg):
@@ -188,36 +288,40 @@ def _frame(head, Y, Zhint):
 
 
 def rest_bones():
-    """name -> (head, Matrix3 frame, length, parent, deform). Everything in the bind pose."""
+    """name -> (head, Matrix3 frame, length, parent, deform). Everything in the bind pose, for the active kind."""
     B = {}
+    sz = K.size
     # Root points up with +Z toward the spider's front (world -Y), so it lands in Unity with identity orientation
     # (up = +Y, forward = +Z). Unity measures root motion in this bone's frame: pointing down (+Z backward), it made
     # the walk come out backwards. (Matrix(rows).transposed(): each row is a column = the bone's X, Y, Z.)
-    B["Root"] = (Vector((0, 0, 0)), Matrix(((1, 0, 0), (0, 0, 1), (0, -1, 0))).transposed(), 0.25, None, False)
+    B["Root"] = (Vector((0, 0, 0)), Matrix(((1, 0, 0), (0, 0, 1), (0, -1, 0))).transposed(), 0.25 * sz, None, False)
     # Motion carries the root motion (Unity's motion node). It is a sibling of Root, not its parent: Unity leaves the
     # motion node's own travel in the pose, so anything hanging from it would move twice and snap back every loop.
     # Exported clips keep the skeleton in place and move only Motion. Deform so the FBX export keeps it (no weights).
-    B["Motion"] = (Vector((0, 0, 0)), Matrix(((1, 0, 0), (0, 0, 1), (0, -1, 0))).transposed(), 0.2, None, True)
-    lz = Vector((0, 0, LIFT))
-    B["Body"] = (*_frame(BODY_C + lz, (0, -1, 0), (0, 0, 1)), 0.30, "Root", True)
-    B["Abdomen"] = (*_frame(PEDICEL + lz, (0, 1, 0.02), (0, 0, 1)), 0.45, "Body", True)
+    B["Motion"] = (Vector((0, 0, 0)), Matrix(((1, 0, 0), (0, 0, 1), (0, -1, 0))).transposed(), 0.2 * sz, None, True)
+    lz = Vector((0, 0, K.lift))
+    hc, ab = K.ceph, K.abd
+    B["Body"] = (*_frame(_sized(_about(BODY_C, hc) + lz), (0, -1, 0), (0, 0, 1)), 0.30 * sz, "Root", True)
+    B["Abdomen"] = (*_frame(_sized(PEDICEL + lz), (0, 1, 0.02), (0, 0, 1)), 0.45 * sz, "Body", True)
+    pl = _mean(hc) * sz                                   # palp lengths follow the carapace
     for side in (1, -1):
         sfx = 'L' if side > 0 else 'R'
         mx = Vector((side, 1, 1))
-        b = Vector(CHEL['base']) * mx + lz
-        t = Vector(CHEL['tip']) * mx + lz
+        b = _sized(_about(Vector(CHEL['base']) * mx, hc) + lz)
+        t = _sized(_about(Vector(CHEL['tip']) * mx, hc) + lz)
         B[f"Chelicera{sfx}"] = (*_frame(b, t - b, (0, -1, 0)), (t - b).length, "Body", True)
-        ft = Vector(FANG['tip']) * mx + lz
+        ft = _sized(_about(Vector(FANG['tip']) * mx, hc) + lz)
         B[f"Fang{sfx}"] = (*_frame(t, ft - t, (0, 0, -1)), (ft - t).length, f"Chelicera{sfx}", True)
         # palp: three segments in a plane, FK angles
-        C = Vector(PALP['C']) * mx + lz
+        C = _sized(_about(Vector(PALP['C']) * mx, hc) + lz)
         yaw = math.radians(PALP['yaw'])
         e_r = Vector((side * math.cos(yaw), -math.sin(yaw), 0))
-        fr = leg_frames(C, PALP['L'], e_r, [math.radians(a) for a in PALP['angles']])
+        Lp = PALP['L'] if pl == 1.0 else tuple(l * pl for l in PALP['L'])
+        fr = leg_frames(C, Lp, e_r, [math.radians(a) for a in PALP['angles']])
         par = "Body"
         for k, nm in enumerate(("Femur", "Tibia", "Tarsus")):
             n = f"Palp{sfx}_{nm}"
-            B[n] = (fr[k][0], fr[k][1], PALP['L'][k], par, True)
+            B[n] = (fr[k][0], fr[k][1], Lp[k], par, True)
             par = n
         for i in range(4):
             C, Ls, foot, k, fp = leg_spec(i, side)
@@ -230,10 +334,13 @@ def rest_bones():
                 par = n
             LM[f"foot_{sfx}{i + 1}"] = fr[5][0]
     # sockets: head = attach point
-    B["Socket_Saddle"] = (*_frame(Vector((0, -0.24, 0.790)) + lz, (0, 0, 1), (0, -1, 0)), 0.08, "Body", False)
-    B["Socket_Mouth"] = (*_frame(Vector((0, -0.775, 0.470)) + lz, (0, -1, 0), (0, 0, 1)), 0.08, "Body", False)
-    B["Socket_Abdomen"] = (*_frame(Vector((0, 0.40, 0.955)) + lz, (0, 0, 1), (0, -1, 0)), 0.08, "Abdomen", False)
-    B["Socket_Spinneret"] = (*_frame(Vector((0, 0.965, 0.548)) + lz, (0, 1, -0.35), (0, 0, 1)), 0.08, "Abdomen", False)
+    sk = 0.08 * sz
+    B["Socket_Saddle"] = (*_frame(_sized(_about(Vector((0, -0.24, 0.790)), hc) + lz), (0, 0, 1), (0, -1, 0)), sk, "Body", False)
+    B["Socket_Mouth"] = (*_frame(_sized(_about(Vector((0, -0.775, 0.470)), hc) + lz), (0, -1, 0), (0, 0, 1)), sk, "Body", False)
+    B["Socket_Abdomen"] = (*_frame(_sized(_about(Vector((0, 0.40, 0.955)), ab) + lz), (0, 0, 1), (0, -1, 0)), sk, "Abdomen", False)
+    B["Socket_Spinneret"] = (*_frame(_sized(_about(Vector((0, 0.965, 0.548)), ab) + lz), (0, 1, -0.35), (0, 0, 1)), sk, "Abdomen", False)
+    if K.extra_bones is not None:
+        K.extra_bones(B)
     return B
 
 
@@ -275,81 +382,116 @@ def _mat4(head, frame):
 
 
 def _segment_rows(seg, L, k):
-    prof = PROFILE[seg]
+    prof = K.profile[seg]
     f = FLAT[seg]
-    k = k * LEG_THICK
+    k = k * LEG_THICK * (K.leg_thick * K.size)
     return [(0, t * L, 0, r * k * f, r * k, r * k) for t, r in prof]
 
 
+def ceph_rows():
+    """The carapace's loft rows for the active kind (adult unlifted space)."""
+    return _rows(_subset(CEPH_ROWS, K.ceph_rows), K.ceph)
+
+
+def abd_rows():
+    return _rows(_subset(ABD_ROWS, K.abd_rows), K.abd)
+
+
 def build_body():
-    """The game mesh (one object, rigid vertex groups by bone) and the landmarks. Returns the object."""
+    """The game mesh (one object, rigid vertex groups by bone) and the landmarks, for the active kind. Returns the
+    object."""
     B = rest_bones()
     bm = bmesh.new()
     P = _Parts(bm)
+    hc, ab = K.ceph, K.abd
+    ks = K.seg
 
-    absolute = []                      # parts built from the absolute rows; lifted by LIFT afterwards
+    absolute = []                      # parts built from the absolute rows; lifted and sized afterwards
     # cephalothorax, pedicel, abdomen (lofted along Y, seam down the belly midline)
-    vs = loft(bm, CEPH_ROWS, up=(0, 0, 1), seg=16, per_seg=1, cap0=0.55, cap1=0.35, capk=2, split=True)
-    P.tag(vs, "Body", PART['carapace'], t_axis=(-0.73, -0.02))
+    crows = ceph_rows()
+    vs = loft(bm, crows, up=(0, 0, 1), seg=ks['ceph'], per_seg=1, cap0=0.55, cap1=0.35, capk=2, split=True)
+    P.tag(vs, "Body", PART['carapace'], t_axis=_ty((-0.73, -0.02), hc))
     absolute += vs
-    vs = loft(bm, [(0, -0.075, 0.615, 0.052, 0.046, 0.046), (0, -0.005, 0.620, 0.046, 0.040, 0.040),
-                   (0, 0.065, 0.628, 0.054, 0.048, 0.048)], up=(0, 0, 1), seg=8, per_seg=1, cap0=0, cap1=0)
-    P.tag(vs, "Body", PART['pedicel'], t_axis=(-0.075, 0.065))
+    ped = [(0, -0.075, 0.615, 0.052, 0.046, 0.046), (0, -0.005, 0.620, 0.046, 0.040, 0.040),
+           (0, 0.065, 0.628, 0.054, 0.048, 0.048)]
+    if not (_same(hc) and _same(ab)):
+        ped = [_rows([r], hc if r[1] < PEDICEL.y else ab)[0] for r in ped]
+    vs = loft(bm, ped, up=(0, 0, 1), seg=ks['ped'], per_seg=1, cap0=0, cap1=0)
+    P.tag(vs, "Body", PART['pedicel'], t_axis=(ped[0][1], ped[-1][1]))
     absolute += vs
-    vs = loft(bm, ABD_ROWS, up=(0, 0, 1), seg=20, per_seg=1, cap0=0.5, cap1=0.6, capk=2, split=True)
-    P.tag(vs, "Abdomen", PART['abdomen'], t_axis=(0.0, 0.97))
+    vs = loft(bm, abd_rows(), up=(0, 0, 1), seg=ks['abd'], per_seg=K.abd_per_seg, cap0=0.5, cap1=0.6, capk=2,
+              split=True)
+    P.tag(vs, "Abdomen", PART['abdomen'], t_axis=_ty((0.0, 0.97), ab))
     absolute += vs
 
     # eyes: domes where rays from the head centre meet the carapace
     tmp = bmesh.new()
-    loft(tmp, CEPH_ROWS, up=(0, 0, 1), seg=16, per_seg=1, cap0=0.55, cap1=0.35, capk=2)
+    loft(tmp, crows, up=(0, 0, 1), seg=ks['ceph'], per_seg=1, cap0=0.55, cap1=0.35, capk=2)
     bvh = BVHTree.FromBMesh(tmp)
     tmp.free()
+    ek = K.eye * _mean(hc)
     for name, d, r, h in EYES:
         for side in (1, -1):
             dv = Vector((side * d[0], d[1], d[2])).normalized()
-            hit, nrm, _, _ = bvh.ray_cast(EYE_ORIGIN, dv, 2.0)
+            hit, nrm, _, _ = bvh.ray_cast(_about(EYE_ORIGIN, hc), dv, 2.0)
             if hit is None:
                 continue
             n = (nrm.normalized() + dv).normalized()
-            vs = dome(bm, hit - n * h * 0.35, n, r, h * 1.35, seg=10 if r > 0.03 else 7, rings=2 if r > 0.03 else 1)
-            P.tag(vs, "Body", PART['eye_big'] if r > 0.03 else PART['eye_small'], t_axis=(-0.75, -0.4))
+            dseg, drings = ks['eye_big'] if r > 0.03 else ks['eye_small']
+            vs = dome(bm, hit - n * (h * ek) * 0.35, n, r * ek, (h * ek) * 1.35, seg=dseg, rings=drings)
+            P.tag(vs, "Body", PART['eye_big'] if r > 0.03 else PART['eye_small'], t_axis=_ty((-0.75, -0.4), hc))
             absolute += vs
-            LM[f"eye_{name}_{'L' if side > 0 else 'R'}"] = (hit + Vector((0, 0, LIFT)), n)
+            LM[f"eye_{name}_{'L' if side > 0 else 'R'}"] = (_sized(hit + Vector((0, 0, K.lift))), n)
 
     # spinnerets: two pairs of short cones under the tip of the abdomen, pointing back and down
+    ka = _mean(ab)
     for side in (1, -1):
         for dx, dy, dz, ln, r in ((0.030, 0.905, 0.555, 0.070, 0.021), (0.018, 0.895, 0.530, 0.050, 0.016)):
-            b = Vector((side * dx, dy, dz))
-            tip = b + Vector((side * 0.010, 0.85, -0.52)).normalized() * ln
-            vs = cone(bm, b, tip, r, seg=5)
-            P.tag(vs, "Abdomen", PART['spinneret'], t_axis=(0.88, 0.97))
+            b = _about(Vector((side * dx, dy, dz)), ab)
+            tip = b + Vector((side * 0.010, 0.85, -0.52)).normalized() * (ln * ka)
+            vs = cone(bm, b, tip, r * ka, seg=ks['spinneret'])
+            P.tag(vs, "Abdomen", PART['spinneret'], t_axis=_ty((0.88, 0.97), ab))
             absolute += vs
+    if K.extras is not None:
+        K.extras(bm, P, B, absolute)
     for v in absolute:
-        v.co.z += LIFT
+        v.co.z += K.lift
+    if K.size != 1.0:
+        for v in absolute:
+            v.co *= K.size
 
+    m = _mean(hc) * K.size                                # mouthparts follow the carapace
     for side in (1, -1):
         sfx = 'L' if side > 0 else 'R'
         # chelicerae: bulging forward, and the fangs folded in under them
         h, fr, L, _, _ = B[f"Chelicera{sfx}"]
-        rows = [(0, -0.02, 0, 0.050, 0.050, 0.046), (0, 0.05, 0, 0.066, 0.074, 0.056), (0, 0.10, 0, 0.066, 0.076, 0.054),
-                (0, 0.15, 0, 0.056, 0.062, 0.046), (0, L, 0, 0.036, 0.040, 0.034)]
-        vs = loft(bm, rows, up=(0, 0, 1), seg=10, per_seg=1, cap0=0.5, cap1=0.8, capk=2, xform=_mat4(h, fr))
+        if K.simple_mouth:
+            rows = [(0, -0.02 * m, 0, 0.050 * m, 0.050 * m, 0.046 * m), (0, 0.08 * m, 0, 0.066 * m, 0.075 * m, 0.055 * m),
+                    (0, L, 0, 0.036 * m, 0.040 * m, 0.034 * m)]
+        else:
+            rows = [(0, -0.02 * m, 0, 0.050 * m, 0.050 * m, 0.046 * m), (0, 0.05 * m, 0, 0.066 * m, 0.074 * m, 0.056 * m),
+                    (0, 0.10 * m, 0, 0.066 * m, 0.076 * m, 0.054 * m), (0, 0.15 * m, 0, 0.056 * m, 0.062 * m, 0.046 * m),
+                    (0, L, 0, 0.036 * m, 0.040 * m, 0.034 * m)]
+        vs = loft(bm, rows, up=(0, 0, 1), seg=ks['chel'], per_seg=1, cap0=0.5, cap1=0.8, capk=2, xform=_mat4(h, fr))
         P.tag(vs, f"Chelicera{sfx}", PART['chelicera'], h, fr, L)
         h, fr, L, _, _ = B[f"Fang{sfx}"]
         M = _mat4(h, fr)
-        vs = cone(bm, (0, -0.01, 0), (0, L * 0.9, 0), FANG['r'], seg=5, xform=M, bend=(0.0, 0, -0.03))
+        vs = cone(bm, (0, -0.01 * m, 0), (0, L * 0.9, 0), FANG['r'] * m, seg=ks['fang'], xform=M, bend=(0.0, 0, -0.03 * m))
         P.tag(vs, f"Fang{sfx}", PART['fang'], h, fr, L)
         # palps
         for k, nm in enumerate(("Femur", "Tibia", "Tarsus")):
             n = f"Palp{sfx}_{nm}"
             h, fr, L, _, _ = B[n]
-            r0 = PALP['r'][k]
+            r0 = PALP['r'][k] * m
             rows = [(0, -0.05 * L, 0, r0 * 0.8, r0 * 0.8, r0 * 0.8), (0, 0.1 * L, 0, r0, r0, r0), (0, L, 0, r0 * 0.9, r0 * 0.95, r0 * 0.9)]
             if nm == "Tarsus":
                 rows = [(0, -0.05 * L, 0, r0 * 0.8, r0 * 0.8, r0 * 0.8), (0, 0.3 * L, 0, r0 * 1.15, r0 * 1.2, r0 * 1.2),
                         (0, L, 0, r0 * 0.7, r0 * 0.7, r0 * 0.7)]
-            vs = loft(bm, rows, up=(0, 0, 1), seg=6, per_seg=1, cap0=0.6, cap1=(0.9 if nm == "Tarsus" else 0.0), capk=2,
+            c0 = 0.6
+            if K.simple_mouth:                        # one tube per segment, the club only on the tarsus
+                rows = [rows[0], rows[-1]] if nm != "Tarsus" else rows
+                c0 = 0.0
+            vs = loft(bm, rows, up=(0, 0, 1), seg=ks['palp'], per_seg=1, cap0=c0, cap1=(0.9 if nm == "Tarsus" else 0.0), capk=2,
                       xform=_mat4(h, fr))
             P.tag(vs, n, PART['palp'], h, fr, L)
         # legs
@@ -360,25 +502,28 @@ def build_body():
                 h, fr, L, _, _ = B[n]
                 M = _mat4(h, fr)
                 tip = seg == "Tarsus"
-                vs = loft(bm, _segment_rows(seg, L, k), up=(0, 0, 1), seg=SIDES_SEG[seg], per_seg=1,
+                vs = loft(bm, _segment_rows(seg, L, k), up=(0, 0, 1), seg=K.sides[seg], per_seg=1,
                           cap0=0.7, cap1=(1.1 if tip else 0.0), capk=2, xform=M)
                 P.tag(vs, n, PART['leg'] + 5 * i + j, h, fr, L)
                 # spines (macrosetae): ventral-lateral rows on tibia and metatarsus, a pair on top of the femur
                 spines = []
-                if seg == "Tibia":
+                if K.spines <= 0:
+                    pass
+                elif seg == "Tibia":
                     spines = [(t, a) for t in (0.42, 0.62, 0.82) for a in (-125, -55)]
                 elif seg == "Metatarsus":
                     spines = [(t, a) for t in (0.35, 0.72) for a in (-125, -55)]
                 elif seg == "Femur":
                     spines = [(0.55, 90), (0.8, 90)]
-                prof = PROFILE[seg]
+                prof = K.profile[seg]
+                st = K.leg_thick * K.size
                 for t, adeg in spines:
-                    r = np.interp(t, [p[0] for p in prof], [p[1] for p in prof]) * k * LEG_THICK
+                    r = np.interp(t, [p[0] for p in prof], [p[1] for p in prof]) * k * LEG_THICK * st
                     a = math.radians(adeg)
                     rad = Vector((math.cos(a) * FLAT[seg], 0, math.sin(a)))
                     base = Vector((0, t * L, 0)) + rad * r * 0.85
-                    tipv = base + (rad * 0.55 + Vector((0, 0.84, 0))).normalized() * (0.075 if seg != "Femur" else 0.06) * k
-                    vs = cone(bm, base, tipv, 0.0085 * k, seg=3, xform=M)
+                    tipv = base + (rad * 0.55 + Vector((0, 0.84, 0))).normalized() * (0.075 if seg != "Femur" else 0.06) * k * (K.spines * K.size)
+                    vs = cone(bm, base, tipv, 0.0085 * k * st, seg=3, xform=M)
                     P.tag(vs, n, PART['spine'], h, fr, L)
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
@@ -387,10 +532,14 @@ def build_body():
     info = [(v[P.part], v[P.t], v[P.u]) for v in bm.verts]
     co_y = [v.co.y for v in bm.verts]
     part_ped = PART['pedicel']
+    w0, w1 = -0.06, 0.05                                  # the waist's blend, Body -> Abdomen
+    if not (_same(hc) and _same(ab) and K.size == 1.0):
+        w0 = (PEDICEL.y + (w0 - PEDICEL.y) * hc[1]) * K.size
+        w1 = (PEDICEL.y + (w1 - PEDICEL.y) * ab[1]) * K.size
 
-    coll = get_coll("SPD_Body")
-    remove_obj("SpiderBody")
-    ob = mesh_obj("SpiderBody", bm, coll, recalc=False)
+    coll = get_coll(K.key + "_Body")
+    remove_obj(K.body)
+    ob = mesh_obj(K.body, bm, coll, recalc=False)
     me = ob.data
     for p in me.polygons:
         p.use_smooth = True
@@ -398,7 +547,7 @@ def build_body():
     for vi, bi in enumerate(bone):
         n = names[bi]
         if info[vi][0] == part_ped:                 # waist: blend Body -> Abdomen
-            w = float(smoothstep(-0.06, 0.05, co_y[vi]))
+            w = float(smoothstep(w0, w1, co_y[vi]))
             if w < 1:
                 groups["Body"].add([vi], 1 - w, 'REPLACE')
             if w > 0:
@@ -425,3 +574,131 @@ def tri_report(ob):
         out[key] = out.get(key, 0) + len(p.vertices) - 2
     out["total"] = sum(len(p.vertices) - 2 for p in me.polygons)
     return out
+
+
+# ----------------------------------------------------------------------------------------- the broodmother's extras
+# egg sacs: (ray from the abdomen's centre (adult space), radius, turn of the long axis (deg), seed), kept off the
+# skull so it still reads from above.
+SACS = [
+    # a cluster on the rear of the back (behind the skull, clear of the spinnerets)
+    ((0.00, 0.78, 0.62), 0.130, 5, 1), ((0.32, 0.70, 0.62), 0.115, -25, 2), ((-0.32, 0.72, 0.60), 0.120, 30, 3),
+    ((0.18, 0.92, 0.32), 0.110, 70, 4), ((-0.20, 0.92, 0.30), 0.105, -60, 5), ((0.52, 0.66, 0.40), 0.100, -40, 12),
+    ((-0.54, 0.64, 0.38), 0.100, 45, 13),
+    # and down both flanks
+    ((0.95, 0.28, 0.02), 0.105, 85, 6), ((0.86, 0.50, -0.10), 0.100, 70, 7), ((0.74, 0.12, -0.24), 0.085, 95, 8),
+    ((0.80, 0.62, 0.14), 0.090, 60, 14),
+    ((-0.95, 0.30, 0.00), 0.100, -80, 9), ((-0.86, 0.52, -0.12), 0.095, -65, 10), ((-0.74, 0.14, -0.22), 0.085, -95, 11),
+    ((-0.80, 0.60, 0.16), 0.090, -60, 15),
+]
+# spines on the abdomen's shoulders, both sides: (y, ray elevation (deg), length, lean back (deg))
+HORNS = [(0.16, 52, 0.24, 16), (0.33, 47, 0.19, 24), (0.50, 40, 0.14, 32)]
+RIDGE = [(-0.50, 0.085), (-0.43, 0.10), (-0.36, 0.09), (-0.20, 0.07)]       # carapace midline: (y, length)
+
+
+def _surface(rows, seg, per_seg):
+    tmp = bmesh.new()
+    loft(tmp, rows, up=(0, 0, 1), seg=seg, per_seg=per_seg, cap0=0.5, cap1=0.6, capk=2)
+    tmp.normal_update()                                         # (without it the BVH hits come back with zero normals)
+    bvh = BVHTree.FromBMesh(tmp)
+    tmp.free()
+    return bvh
+
+
+def _brood_extras(bm, P, B, absolute):
+    """Egg sacs on the back and flanks, spines on the abdomen's shoulders and a short ridge on the carapace (adult
+    unlifted space: lifted and sized with the body), and the egg the Spawn clip lays (on SpawnEgg, in its bone frame)."""
+    ab = K.abd
+    bvh = _surface(abd_rows(), K.seg['abd'], K.abd_per_seg)
+    centre = _about(Vector((0, 0.45, 0.66)), ab)
+    for d, r, turn, seed in SACS:
+        dv = Vector(d).normalized()
+        hit, nrm, _, _ = bvh.ray_cast(centre, dv, 5.0)
+        if hit is None:
+            continue
+        n = nrm.normalized()
+        if n.dot(dv) < 0:                                       # the temporary loft's normals may face in
+            n = -n
+        along = Vector((0, 1, 0)) - n * n.y                     # the body's length, in the surface
+        if along.length < 1e-3:
+            along = Vector((1, 0, 0)) - n * n.x
+        along.normalize()
+        Y = (Matrix.Rotation(math.radians(turn), 3, n) @ along).normalized()
+        head, fr = _frame(hit + n * r * 0.42, Y, n)
+        L = r * 2.5
+        vs = spider_eggs.egg(bm, _mat4(head, fr), L, 2 * r, seg=6, rows=3, seed=seed, flat=0.82, lumps=0.07)
+        P.tag(vs, "Abdomen", PART['sac'], head, fr, L)
+        absolute += vs
+    for y, elev, ln, lean in HORNS:
+        for side in (1, -1):
+            o = _about(Vector((0, y, 0.64)), ab)
+            e = math.radians(elev)
+            dv = Vector((side * math.cos(e), 0, math.sin(e)))
+            hit, nrm, _, _ = bvh.ray_cast(o, dv, 5.0)
+            if hit is None:
+                continue
+            n = nrm.normalized()
+            if n.dot(dv) < 0:
+                n = -n
+            out = (n + Vector((0, 0, 0.7))).normalized()
+            out = (Matrix.Rotation(math.radians(-lean), 3, Vector((side, 0, 0))) @ out).normalized()
+            base = hit - n * 0.02
+            L = ln * _mean(ab)
+            head, fr = _frame(base, out, (0, 1, 0))
+            vs = cone(bm, base, base + out * L, L * 0.24, seg=5, bend=Vector((0, L * 0.22, -L * 0.04)))
+            P.tag(vs, "Abdomen", PART['horn'], head, fr, L)
+            absolute += vs
+    cv = _surface(ceph_rows(), K.seg['ceph'], 1)
+    for y, ln in RIDGE:
+        o = _about(Vector((0, y, 0.55)), K.ceph)
+        hit, nrm, _, _ = cv.ray_cast(o, Vector((0, 0, 1)), 2.0)
+        if hit is None:
+            continue
+        out = Vector((0, 0.35, 1)).normalized()
+        base = hit - Vector((0, 0, 0.01))
+        head, fr = _frame(base, out, (0, 1, 0))
+        vs = cone(bm, base, base + out * ln, ln * 0.28, seg=4, bend=Vector((0, ln * 0.25, 0)))
+        P.tag(vs, "Body", PART['horn'], head, fr, ln)
+        absolute += vs
+    h, fr, L, _, _ = B["SpawnEgg"]
+    vs = spider_eggs.egg(bm, _mat4(h, fr), spider_eggs.EGG_LEN, spider_eggs.EGG_W, seg=8, rows=5, seed=spider_eggs.EGG_SEED)
+    P.tag(vs, "SpawnEgg", PART['egg'], h, fr, L)
+
+
+def _brood_bones(B):
+    """SpawnEgg: the egg the Spawn clip lays, at rest inside the abdomen behind the spinnerets, +Y out of them."""
+    h, fr, L, par, d = B["Socket_Spinneret"]
+    axis = fr.col[1].normalized()
+    head = h - axis * (spider_eggs.EGG_LEN * 0.8)
+    B["SpawnEgg"] = (*_frame(head, axis, (0, 0, 1)), spider_eggs.EGG_LEN * 0.5, "Abdomen", True)
+
+
+JUVENILE_PROFILE = {           # fewer rings and thinner, smoother joints than the adult's
+    "Coxa": [(-0.30, 0.060), (1.0, 0.072)],
+    "Femur": [(-0.07, 0.052), (0.15, 0.062), (1.0, 0.056)],
+    "Tibia": [(-0.06, 0.050), (0.12, 0.058), (1.0, 0.046)],
+    "Metatarsus": [(-0.07, 0.038), (1.0, 0.034)],
+    "Tarsus": [(-0.08, 0.031), (1.0, 0.022)],
+}
+
+SPIDER = Kind("Spider")
+SPIDERLING = Kind(
+    "Spiderling", key="SPL", cams="SPL_", size=0.36, ceph=(1.12, 1.12, 1.12), abd=(1.28, 1.2, 1.3), lift=-0.13,
+    leg_len=0.84, leg_thick=0.72, foot=0.95, femur=4.0, eye=1.25, spines=0.0, foot_z=0.0075, level_feet=True,
+    seg=dict(ceph=10, abd=12, ped=4, chel=5, palp=4, eye_big=(8, 1), eye_small=(5, 1), fang=4, spinneret=3),
+    sides=dict(Coxa=3, Femur=5, Tibia=5, Metatarsus=4, Tarsus=4), profile=JUVENILE_PROFILE,
+    ceph_rows=(0, 1, 2, 3, 5, 8), abd_rows=(0, 1, 2, 3, 4, 5, 6, 8), simple_mouth=True)
+BROODMOTHER = Kind(
+    "Broodmother", key="BRD", cams="BRD_", size=1.8, abd=(1.5, 1.3, 1.55), lift=-0.11, leg_len=0.96,
+    leg_thick=1.3, foot=1.06, femur=-4.0, spines=1.5, level_feet=True, foot_z=0.064,
+    seg=dict(ceph=18, abd=24, ped=8, chel=10, palp=6, eye_big=(10, 2), eye_small=(7, 1), fang=5, spinneret=5),
+    abd_per_seg=2, extras=_brood_extras, extra_bones=_brood_bones, scaled=("Abdomen", "SpawnEgg"))
+KINDS = {k.name: k for k in (SPIDER, SPIDERLING, BROODMOTHER)}
+K = SPIDER
+
+
+def use(name):
+    """Make `name` (Spider, Spiderling, Broodmother) the kind that every build function works on."""
+    global K
+    K = KINDS[name] if isinstance(name, str) else name
+    LM.clear()
+    return K

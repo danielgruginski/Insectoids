@@ -1,11 +1,11 @@
 """FBX export for Unity (settings as the goblins': -Z forward / Y up, FBX_SCALE_ALL, deform bones only).
 
-Per creature (Spider, Wasp):
+Per creature (Spider, Spiderling, Broodmother, Wasp, Centipede; the egg props: spider_eggs.export_props):
 export/<Name>.fbx                   rig + meshes, bind pose (Generic rig in Unity, faces +Z)
 export/Anims/<Name>@<Clip>.fbx      the skeleton with one baked take each
 export/Anims/<name>_clips.json      {clips: [{name, frames, fps, loop, rootMotion, events: [{name, time}]}]} (read by
                                     the Unity setup)
-The animation module passed in (spider_anim, wasp_anim) provides CLIPS, FPS, use(name, rig), clear(rig).
+The animation module passed in (spider_anim, wasp_anim) provides CLIPS, FPS (or clip_fps()), use(name, rig), clear(rig).
 """
 import bpy, json, os
 from bug_common import ROOT
@@ -53,7 +53,8 @@ def export_clips(anim, rig_name, name, moving=(), names=None):
         for clip in names or anim.CLIPS:
             act = bpy.data.actions[anim.action_name(clip) if hasattr(anim, "action_name") else clip]
             anim.use(clip, rig)
-            scn.render.fps = anim.FPS
+            fps = anim.clip_fps() if hasattr(anim, "clip_fps") else anim.FPS
+            scn.render.fps = fps
             _select([rig])
             path = os.path.join(EXPORT, "Anims", f"{name}@{clip}.fbx")
             opts = dict(FBX)
@@ -63,7 +64,7 @@ def export_clips(anim, rig_name, name, moving=(), names=None):
             bpy.ops.export_scene.fbx(filepath=path, use_selection=True, object_types={'ARMATURE'}, **opts)
             written.append(path)
             meta.append({
-                "name": clip, "frames": int(act["frames"]), "fps": anim.FPS, "loop": bool(act["loop"]),
+                "name": clip, "frames": int(act["frames"]), "fps": fps, "loop": bool(act["loop"]),
                 "rootMotion": clip in moving,
                 "events": [{"name": k[len("event_"):], "time": float(act[k])} for k in act.keys() if k.startswith("event_")],
             })
@@ -78,7 +79,8 @@ def export_clips(anim, rig_name, name, moving=(), names=None):
 
 
 def export_spider():
-    import spider_anim, bug_rig
+    import spider_anim, spider_body, bug_rig
+    spider_body.use("Spider")
     return ([export_model(spider_anim, bug_rig.RIG, ["SpiderBody"], "Spider")] +
             export_clips(spider_anim, bug_rig.RIG, "Spider", moving={"Walk", "Run"}))
 
