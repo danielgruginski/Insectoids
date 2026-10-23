@@ -38,6 +38,14 @@
    ]
   },
   {
+   "name": "GetUp",
+   "frames": 48,
+   "fps": 30,
+   "loop": false,
+   "rootMotion": false,
+   "events": []
+  },
+  {
    "name": "Bite",
    "frames": 45,
    "fps": 30,

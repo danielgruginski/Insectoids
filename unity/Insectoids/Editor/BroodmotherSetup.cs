@@ -13,7 +13,7 @@ namespace Insectoids.EditorTools
     /// Blender:
     ///   Broodmother.fbx              Generic rig (the spider's bones + SpawnEgg, the egg she lays), Motion = root-motion
     ///                                node, sockets kept (Socket_Spinneret: where her eggs come down)
-    ///   Anims/Broodmother@*.fbx      Idle, Walk (root motion), Threat, Bite, Spawn, Hit, Death; events OnInsectEvent
+    ///   Anims/Broodmother@*.fbx      Idle, Walk (root motion), Threat, Bite, Spawn, Hit, Death, GetUp; events OnInsectEvent
     ///                                (Bite, Spawn, Dead) from Anims/broodmother_clips.json; Abdomen and SpawnEgg scale
     ///   Materials                    M_Broodmother (+ Ashen skin; smoothness from the texture's alpha)
     ///   Prefabs/Spider_Broodmother   Animator + InsectAppearance + InsectEvents + SpiderBrood (Spawn puts down
@@ -37,7 +37,8 @@ namespace Insectoids.EditorTools
             new PoolDef("Bite", 1f, "Bite") { next = "Idle" },
             new PoolDef("Spawn", 1f, "Spawn") { next = "Idle" },
             new PoolDef("Hit", 0.5f, "Hit") { next = "Idle" },
-            new PoolDef("Death", 0.2f, "Death") { after = 3f, next = "Idle" },        // no GetUp: she pops back
+            new PoolDef("Death", 0.2f, "Death") { after = 3f, next = "GetUp" },
+            new PoolDef("GetUp", 0f, "GetUp") { next = "Idle" },                        // from the slumped Death (2026-10-23)
         };
 
         static BroodmotherSetup() => EditorApplication.delayCall += () => AutoBuild(40);

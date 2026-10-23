@@ -11,7 +11,7 @@ namespace Insectoids.EditorTools
     /// <summary>
     /// Builds the spiderling (the giant spider's juvenile, a third of its size) from the files exported by Blender:
     ///   Spiderling.fbx              Generic rig (the spider's 58 bones), Motion = root-motion node, sockets kept
-    ///   Anims/Spiderling@*.fbx      Idle, Walk / Run (root motion), Hit, Death, Bite at 60 fps; events OnInsectEvent
+    ///   Anims/Spiderling@*.fbx      Idle, Walk / Run (root motion), Hit, Death, GetUp, Bite at 60 fps; events OnInsectEvent
     ///                               (Bite, Dead) from Anims/spiderling_clips.json
     ///   Materials                   M_Spiderling (+ Amber, Dusky skins; smoothness from the texture's alpha)
     ///   Prefabs/Spider_Spiderling   Animator + InsectAppearance (skin, size) + InsectEvents
@@ -33,7 +33,8 @@ namespace Insectoids.EditorTools
             new PoolDef("Run", 1.4f, "Run") { moves = true, h0 = 1, h1 = 2.5f },
             new PoolDef("Bite", 1.2f, "Bite") { next = "Idle" },
             new PoolDef("Hit", 0.6f, "Hit") { next = "Idle" },
-            new PoolDef("Death", 0.25f, "Death") { after = 2.5f, next = "Idle" },     // no GetUp: it pops back
+            new PoolDef("Death", 0.25f, "Death") { after = 2.5f, next = "GetUp" },
+            new PoolDef("GetUp", 0f, "GetUp") { next = "Idle" },                       // from the slumped Death (2026-10-23)
         };
 
         static SpiderlingSetup() => EditorApplication.delayCall += () => AutoBuild(30);

@@ -19,7 +19,7 @@ Clips (30 fps, spider faces -Y):
 
 The family (spider_body.Kind) reuses all of this: offsets in the key-pose tracks and gaits are adult metres, scaled by
 the kind's size; FAMILY gives each kind its clips, fps, tempo (duration factor on the adult's clips) and gaits, and
-KIND_CLIPS the clips of its own (the broodmother's slump and Spawn). Actions are <Kind>_<clip> (the adult's bare).
+KIND_CLIPS the clips of its own (the kinds' slumped Death and the GetUp from it, the broodmother's Spawn). Actions are <Kind>_<clip> (the adult's bare).
 """
 import bpy, math, os
 import numpy as np
@@ -531,6 +531,12 @@ def _clip_slump(N30=78, drop=0.31, roll=11.0, curl=0.0, sag=-9.0, nose=-7.0, rec
     turn over): recoils, the legs give way and fold up (knees high, feet drawn in), it sinks onto its belly and leans
     over, the abdomen sags onto the ground and goes slack; with `curl`, the legs then twitch in toward the body.
     Distances in adult metres, frames at 30 fps for N30 = 78 (stretched to N30)."""
+    T = _slump_tracks(N30, drop, roll, curl, sag, nose, recoil)
+    return _own(N30, lambda f: keyed_pose(f, T))
+
+
+def _slump_tracks(N30, drop, roll, curl, sag, nose, recoil):
+    """The key-pose tracks of _clip_slump (30 fps frames); _clip_rise starts from their last keys."""
     k = N30 / 78.0
     F = lambda f: f * k
     r = roll / 11.0
@@ -565,6 +571,54 @@ def _clip_slump(N30=78, drop=0.31, roll=11.0, curl=0.0, sag=-9.0, nose=-7.0, rec
         T['lt:' + key] = lt
         T['fe:' + key] = [(F(0), 50.0), (F(16) + d, 55.0), (F(40), 72.0), (F(78), 74.0)]
         T['ta:' + key] = ta
+    return T
+
+
+SLUMP_DEFAULTS = dict(N30=78, drop=0.31, roll=11.0, curl=0.0, sag=-9.0, nose=-7.0, recoil=-9.0)
+
+
+def _clip_rise(slump, N30=40, settle=0.014):
+    """GetUp for the kinds that die slumped (2026-10-23): from the slump's end pose (its tracks' last keys) the palps
+    and fangs stir, the legs unfold and step out one by one, front pairs first, and plant at the stance; the body
+    pushes up off its belly and levels, the abdomen lifts off the ground and fills out, a small bob as it settles; it
+    ends on Idle's first frame (every track at Idle's start, the femur at the kind's own preference). `slump`: the
+    kind's _clip_slump arguments. Distances in adult metres, frames at 30 fps for N30 (stretched to the kind's fps)."""
+    S = _slump_tracks(**dict(SLUMP_DEFAULTS, **slump))
+    end = {k: v[-1][1] for k, v in S.items()}
+    n = float(N30)
+    F = lambda t: t * n
+    bx, by, bz = end['body']
+    a0 = end['abd']
+    r = 1.0 if end['roll'] >= 0 else -1.0
+    T = {
+        # down on the belly until the legs are out, then up (a little higher than standing) and settle
+        'body': [(F(0), (bx, by, bz)), (F(0.22), (bx, by, bz + 0.02 * abs(bz))), (F(0.45), (bx * 0.6, by * 0.5, bz * 0.62)),
+                 (F(0.66), (bx * 0.15, 0.0, bz * 0.12)), (F(0.80), (0.0, 0.0, settle)), (F(0.91), (0.0, 0.0, -settle * 0.3)),
+                 (F(1.0), (0.0, 0.0, 0.0))],
+        'pitch': [(F(0), end['pitch']), (F(0.20), end['pitch']), (F(0.48), 3.5), (F(0.70), -1.5), (F(0.86), 0.5),
+                  (F(1.0), 0.0)],
+        'roll': [(F(0), end['roll']), (F(0.25), end['roll'] * 0.9), (F(0.55), -2.0 * r), (F(0.75), 0.8 * r), (F(1.0), 0.0)],
+        'abd': [(F(0), a0), (F(0.30), (a0[0] * 0.8, a0[1] * 0.6, a0[2] * 0.6)), (F(0.62), (5.0, -1.5, -1.0)),
+                (F(0.84), (-1.5, 0.5, 0.0)), (F(1.0), (0.0, 0.0, 0.0))],
+        'abs': [(F(0), end['abs']), (F(0.30), end['abs']), (F(0.62), 1.0), (F(1.0), 1.0)],
+        'chel': [(F(0), end['chel']), (F(0.12), (-6.0, 10.0)), (F(0.30), (2.0, 4.0)), (F(0.65), (-3.0, 5.0)),
+                 (F(1.0), (0.0, 0.0))],
+        'fang': [(F(0), end['fang']), (F(0.12), 40.0), (F(0.35), 12.0), (F(0.70), 4.0), (F(1.0), 0.0)],
+        'palp': [(F(0), end['palp']), (F(0.10), (34.0, 0.0, 6.0)), (F(0.22), (18.0, -10.0, -12.0)),
+                 (F(0.45), (8.0, 4.0, 6.0)), (F(0.75), (2.0, -2.0, -2.0)), (F(1.0), (0.0, 0.0, 0.0))],
+    }
+    D = rest_data()
+    for s_, i in LEG_KEYS:
+        key = f"{'L' if s_ > 0 else 'R'}{i + 1}"
+        d = 2 * i + (0 if s_ > 0 else 1)                  # L1 R1 L2 R2 ... : front pairs first
+        t0, e = 0.06 + 0.045 * d, end['lt:' + key]
+        mid = (e[0] * 0.4, e[1] * 0.4, max(e[2], 0.0) + 0.09)
+        T['lt:' + key] = [(F(0), e), (F(t0), e), (F(t0 + 0.08), mid), (F(t0 + 0.16), (0, 0, 0)), (F(1.0), (0, 0, 0))]
+        ta = end['ta:' + key]
+        T['ta:' + key] = [(F(0), ta), (F(t0), ta), (F(t0 + 0.08), -72.0), (F(t0 + 0.16), -36.0), (F(1.0), -36.0)]
+        fp = math.degrees(D[(s_, i)][3])                  # the kind's femur preference (Idle's: no 'fe' track)
+        fe = end['fe:' + key]
+        T['fe:' + key] = [(F(0), fe), (F(t0 + 0.16), fe - 0.25 * (fe - fp)), (F(0.80), fp), (F(1.0), fp)]
     return _own(N30, lambda f: keyed_pose(f, T))
 
 
@@ -627,8 +681,12 @@ def _clip_spawn():
     return N, pose, False
 
 
-KIND_CLIPS = {"Spiderling": {"Death": lambda: _clip_slump(N30=50, drop=0.24, roll=-6.0, curl=0.6, sag=12.0, nose=2.0)},
-              "Broodmother": {"Death": lambda: _clip_slump(drop=0.17, roll=9.0, sag=2.0, nose=-4.0, recoil=4.0), "Spawn": _clip_spawn}}
+SLUMP = {"Spiderling": dict(N30=50, drop=0.24, roll=-6.0, curl=0.6, sag=12.0, nose=2.0),
+         "Broodmother": dict(drop=0.17, roll=9.0, sag=2.0, nose=-4.0, recoil=4.0)}
+KIND_CLIPS = {"Spiderling": {"Death": lambda: _clip_slump(**SLUMP["Spiderling"]),
+                             "GetUp": lambda: _clip_rise(SLUMP["Spiderling"], N30=30)},
+              "Broodmother": {"Death": lambda: _clip_slump(**SLUMP["Broodmother"]), "Spawn": _clip_spawn,
+                              "GetUp": lambda: _clip_rise(SLUMP["Broodmother"], N30=48)}}
 
 # per kind: clips (in order), fps, tempo (duration factor on the adult's clip), gaits (adult metres, N in 30 fps frames),
 # events (seconds, for its own clips; the adult's EVENTS scale with the tempo), tweaks (tracks merged into adult clips),
@@ -640,7 +698,7 @@ FAMILY = {
                   Run=dict(N=12, stride=1.5, duty=0.5, lift=0.13, body_z=-0.05, pitch=-3.0, bob=0.018, sway=2.5,
                            abd_swing=4.0))),
     "Spiderling": dict(
-        clips=("Idle", "Walk", "Run", "Hit", "Death", "Bite"), fps=60, moving=("Walk", "Run"),
+        clips=("Idle", "Walk", "Run", "Hit", "Death", "GetUp", "Bite"), fps=60, moving=("Walk", "Run"),
         tempo=dict(Idle=0.7, Hit=0.75, Bite=0.7), events=dict(Death=[("Dead", 1.4)]),
         tweaks=dict(Idle={'palp': [(0, (0, 0, 0)), (10, (8, -10, -12)), (15, (0, 0, 0)), (30, (6, 6, 8)), (36, (0, 0, 0)),
                                    (52, (10, -6, -8)), (57, (0, 0, 0)), (72, (5, 8, 8)), (77, (0, 0, 0)), (90, (0, 0, 0))],
@@ -656,7 +714,7 @@ FAMILY = {
                   Run=dict(N=6, stride=1.35, duty=0.5, lift=0.16, body_z=-0.04, pitch=-3.0, bob=0.02, sway=2.0,
                            abd_swing=4.5))),
     "Broodmother": dict(
-        clips=("Idle", "Walk", "Hit", "Death", "Bite", "Threat", "Spawn"), fps=30, moving=("Walk",),
+        clips=("Idle", "Walk", "Hit", "Death", "GetUp", "Bite", "Threat", "Spawn"), fps=30, moving=("Walk",),
         tempo=dict(Idle=1.3, Hit=1.3, Bite=1.25, Threat=1.3),
         events=dict(Death=[("Dead", 2.2)], Spawn=[("Spawn", SPAWN_EVENT / 30.0)]),
         tweaks=dict(Idle={'abs': [(0, 1.0), (45, 1.03), (90, 1.0)]},

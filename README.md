@@ -283,7 +283,7 @@ or inside Blender, with the kind's scene on screen: `spider_build.build_all(kind
 | Script | Does |
 |---|---|
 | `spider_body.py` | `Kind`, the three kinds, the broodmother's extras (egg sacs, spines, the egg she lays on `SpawnEgg`) |
-| `spider_anim.py` | `FAMILY` (clips, fps, tempo, gaits, tweaks per kind), the slump death, the broodmother's Spawn |
+| `spider_anim.py` | `FAMILY` (clips, fps, tempo, gaits, tweaks per kind), the slump death and the GetUp from it (`_clip_rise`), the broodmother's Spawn |
 | `spider_paint.py` | paint in the adult's coordinates for every kind, styles `juvenile` and `brood` |
 | `spider_eggs.py` | the leathery egg shape (shared), the three egg props, their paint and export |
 | `spider_build.py` | `build_all(kind=...)`, `export(kind)`, review renders, lowest vertex per clip, root-motion trace, the family lineup |
@@ -304,7 +304,7 @@ and **Rebuild Broodmother** (each runs by itself the first time) make:
 | `Prefabs/SpiderEgg_Clutch`, `_Single`, `_Hatched` | static props, `M_SpiderEggs` |
 | `Prefabs/Spider_Spiderling` | Animator + `InsectAppearance` (skins base x2, Amber, Dusky; 0.85-1.15x) + `InsectEvents` |
 | `Prefabs/Spider_Broodmother` | Animator + `InsectAppearance` (base x2, Ashen; 0.92-1.08x) + `InsectEvents` + `SpiderBrood` (Spawn puts down `SpiderEgg_Single`) |
-| `Animation/SpiderlingAnims`, `BroodmotherAnims` | clip pools for `InsectRandomAnimator` (Death holds, then back to Idle: no GetUp clips) |
+| `Animation/SpiderlingAnims`, `BroodmotherAnims` | clip pools for `InsectRandomAnimator` (Death holds, then GetUp, then Idle) |
 
 and add 4 spiderlings, a broodmother and 5 egg props to `Scenes/Insectoids_Test`. Reports and renders go to
 `Logs/SpiderlingSetup`, `Logs/BroodmotherSetup` and `Logs/SpiderEggsSetup` (`family_game_22m.png`: the four at the game
@@ -328,6 +328,7 @@ camera). The scripts compile against MedievalSetting's editor (checked offline);
 | `Run` | 0.2 s loop | root motion 2.43 m/s, low | |
 | `Hit` | 0.37 s | jolts back | |
 | `Death` | 1.67 s | sinks onto its belly, legs fold up and in, a last twitch curls them | Dead 1.4 s |
+| `GetUp` | 1.0 s | from the Death end pose: stirs, the legs unfold and step out front pair first, the body pushes up off its belly, settles into Idle | |
 | `Bite` | 0.83 s | pulls back, lunges, front feet pin closer than the adult's (shorter legs) | Bite 0.35 s |
 
 ### The broodmother
@@ -351,6 +352,7 @@ camera). The scripts compile against MedievalSetting's editor (checked offline);
 | `Walk` | 1.33 s loop | heavy gait (duty 0.7, low steps, more sway), root motion 1.15 m/s | |
 | `Hit` | 0.67 s | jolt, the abdomen shudders | |
 | `Death` | 2.6 s | too heavy to roll: sinks onto her belly, legs fold, leans over, the abdomen sags and goes slack | Dead 2.2 s |
+| `GetUp` | 1.6 s | from the Death end pose: the legs step out one by one, she heaves up off her belly, the abdomen lifts and fills out, a small bob into Idle | |
 | `Bite` | 1.5 s | the adult's bite slowed, the abdomen kept up | Bite 0.63 s |
 | `Threat` | 3.13 s | rears, front legs high, the abdomen swells | |
 | `Spawn` | 4.2 s | the abdomen swells and pulses, she sinks and tips it down, an egg is squeezed out of the spinnerets, drops under `Socket_Spinneret`, shrinks away 2 frames later; she rises | Spawn 3.0 s |

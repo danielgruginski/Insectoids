@@ -126,12 +126,33 @@ was in use), exported, Unity scripts written and compile-checked; nothing copied
 - **Open:**
   - Not run in Unity: install, the three menu items, `setup_report.txt` (avatar valid, `dir=(0,0,1)`, the Spawn event,
     `SpawnEgg` scale curves) and a Play-mode trace of Walk/Run are still to do.
-  - No GetUp for the kinds (the test scene pops them back to Idle after Death); no Run, Strike or WebSpit for the
-    broodmother; no Threat, Strike or WebSpit for the spiderling (not asked for).
+  - GetUp for the kinds: done 2026-10-23 (below). No Run, Strike or WebSpit for the broodmother; no Threat, Strike or
+    WebSpit for the spiderling (not asked for).
   - `SpiderBrood` only puts down the egg prop; hatching (egg -> SpiderEgg_Hatched + a spiderling) is game logic.
   - The spiderling's leg joints are angular at 3-5 sides (budget); the brood's sacs are 6-sided and read faceted
     close up.
   - The adult's own feet (3-8 cm under in some clips) and death roll are unchanged on purpose.
+
+## 2026-10-23 (later): GetUp for the spiderling and the broodmother
+
+Daniel: "Do these tasks you mentioned" (from the polish list: in the test scene both popped back to Idle after dying).
+
+- **`spider_anim._clip_rise`** (the kinds' own clip, `KIND_CLIPS[...]["GetUp"]`): starts from the slumped Death's end
+  pose (`_slump_tracks`, the slump's tracks split out of `_clip_slump`; `SLUMP` holds each kind's slump arguments for
+  both), the palps and fangs stir, the legs unfold and step out one by one (L1 R1 L2 R2 ..., lifting 9 cm, adult
+  metres), the body pushes up off its belly and levels (a 1.4 cm overshoot, a small bob), the abdomen lifts and fills
+  out (`abs` back to 1), and it ends on Idle's first frame (the femur at the kind's own preference: Idle has no `fe`
+  track). Spiderling 60 frames at 60 fps = 1.0 s (N30 30), broodmother 48 at 30 fps = 1.6 s (N30 48); no events.
+- **Checked:** Death's last pose -> GetUp's first and GetUp's last -> Idle's first: bone matrices identical (max
+  difference 0.0); lowest vertex in GetUp +0.2 mm (spiderling, a planted tarsus) and +0.8 mm (broodmother), the body
+  never lower; every other action and every mesh in the saved .blend unchanged (all 50 compared), the adult
+  bit-identical (`spider_adult_check.py`: IDENTICAL); contact sheets `renders/sheet_spiderling_GetUp.png`,
+  `sheet_broodmother_GetUp.png`. Built with `spider_family_run.py -- <Kind> clips lowest sheets export`; the old clip
+  and model FBXs came out content-identical (only the exporter's per-run object ids differ) and were restored from git,
+  so only `<Kind>@GetUp.fbx` and the two JSONs are new.
+- **Unity:** `SpiderlingSetup` / `BroodmotherSetup` pools: Death `next = "GetUp"`, a `GetUp` pool (weight 0, `next =
+  "Idle"`), as the adult's. `Run(false)` re-imports the clips and rewrites the animation set in place (same asset), so
+  the test scene's instances pick it up without rebuilding the scene. Not run in Unity.
 
 ## Open / next
 
