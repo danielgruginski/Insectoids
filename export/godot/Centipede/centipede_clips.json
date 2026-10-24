@@ -1,0 +1,104 @@
+{
+ "clips": [
+  {
+   "name": "Idle",
+   "frames": 180,
+   "fps": 60,
+   "loop": true,
+   "rootMotion": false,
+   "events": []
+  },
+  {
+   "name": "Walk",
+   "frames": 54,
+   "fps": 60,
+   "loop": true,
+   "rootMotion": true,
+   "events": []
+  },
+  {
+   "name": "Run",
+   "frames": 36,
+   "fps": 60,
+   "loop": true,
+   "rootMotion": true,
+   "events": []
+  },
+  {
+   "name": "Threat",
+   "frames": 150,
+   "fps": 60,
+   "loop": false,
+   "rootMotion": false,
+   "events": []
+  },
+  {
+   "name": "Bite",
+   "frames": 72,
+   "fps": 60,
+   "loop": false,
+   "rootMotion": false,
+   "events": [
+    {
+     "name": "Bite",
+     "time": 0.55
+    }
+   ]
+  },
+  {
+   "name": "Burrow",
+   "frames": 150,
+   "fps": 60,
+   "loop": false,
+   "rootMotion": true,
+   "events": [
+    {
+     "name": "Burrow",
+     "time": 0.567
+    }
+   ]
+  },
+  {
+   "name": "Emerge",
+   "frames": 150,
+   "fps": 60,
+   "loop": false,
+   "rootMotion": true,
+   "events": [
+    {
+     "name": "Emerge",
+     "time": 0.583
+    }
+   ]
+  },
+  {
+   "name": "Hit",
+   "frames": 30,
+   "fps": 60,
+   "loop": false,
+   "rootMotion": false,
+   "events": []
+  },
+  {
+   "name": "Death",
+   "frames": 120,
+   "fps": 60,
+   "loop": false,
+   "rootMotion": false,
+   "events": [
+    {
+     "name": "Dead",
+     "time": 1.85
+    }
+   ]
+  },
+  {
+   "name": "GetUp",
+   "frames": 90,
+   "fps": 60,
+   "loop": false,
+   "rootMotion": false,
+   "events": []
+  }
+ ]
+}

@@ -1,0 +1,162 @@
+{
+ "Spider": {
+  "target": "SpiderBody",
+  "scale": [
+   0.85,
+   1.2
+  ],
+  "skins": [
+   {
+    "name": "Hunter",
+    "texture": "T_Spider",
+    "weight": 3
+   },
+   {
+    "name": "Rust",
+    "texture": "T_Spider",
+    "tint": [
+     1.0,
+     0.8,
+     0.68
+    ]
+   },
+   {
+    "name": "Dark",
+    "texture": "T_Spider",
+    "tint": [
+     0.72,
+     0.72,
+     0.74
+    ]
+   },
+   {
+    "name": "Pale",
+    "texture": "T_Spider_Pale"
+   }
+  ],
+  "pools": [
+   {
+    "name": "Idle",
+    "weight": 2,
+    "clips": [
+     "Idle"
+    ],
+    "hold": [
+     2,
+     4
+    ]
+   },
+   {
+    "name": "Walk",
+    "weight": 2.4,
+    "clips": [
+     "Walk"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "moves": true
+   },
+   {
+    "name": "Run",
+    "weight": 0.8,
+    "clips": [
+     "Run"
+    ],
+    "hold": [
+     1.5,
+     3
+    ],
+    "moves": true
+   },
+   {
+    "name": "Threat",
+    "weight": 0.9,
+    "clips": [
+     "Threat"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Bite",
+    "weight": 1.4,
+    "clips": [
+     "Bite"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Strike",
+    "weight": 1,
+    "clips": [
+     "Strike"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "WebSpit",
+    "weight": 1.2,
+    "clips": [
+     "WebSpit"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Hit",
+    "weight": 0.6,
+    "clips": [
+     "Hit"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Death",
+    "weight": 0.3,
+    "clips": [
+     "Death"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "GetUp",
+    "after": 2
+   },
+   {
+    "name": "GetUp",
+    "weight": 0,
+    "clips": [
+     "GetUp"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   }
+  ],
+  "dir": "res://insectoids/Spider/",
+  "setup": "res://addons/insectoids/setup/spider_setup.gd"
+ }
+}

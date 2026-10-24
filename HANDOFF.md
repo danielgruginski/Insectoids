@@ -154,6 +154,24 @@ Daniel: "Do these tasks you mentioned" (from the polish list: in the test scene 
   "Idle"`), as the adult's. `Run(false)` re-imports the clips and rewrites the animation set in place (same asset), so
   the test scene's instances pick it up without rebuilding the scene. Not run in Unity.
 
+## 2026-10-24: the Godot pack
+
+- **Why:** Daniel wants a Godot version of the itch Creatures pack (GDScript, every creature built so far). The Beasts
+  repo holds the shared addon (import script, `Creature`, `CreatureWanderer`, coat shaders, builder, demos); this repo
+  adds its creatures (README "Godot").
+- **Export:** `tools/godot_export.py` captures each build's `export()` (FBX writer swapped for `bug_gdx.export_glb`),
+  so rig, meshes, clips and root motion match Unity's; the eggs through `bug_gdx.export_props`. The Spider folder takes
+  only `T_Spider.png` / `T_Spider_*` (a looser filter pulled in the family's textures).
+- **Effects** (`godot/addons/insectoids/fx`, ported from SpiderFx / CentipedeBurrow): web glob + silk thread +
+  snare (`SpiderWebSnare.is_snared(point)`, Unity's `IsSnared`), the centipede's holes and dirt, the broodmother's
+  laid egg.
+  They spawn into a shared container outside the creatures, and work with or without a collider under them.
+- **Scenes reference the .glb:** the eggs are a `Creature` root (one skin, size 1) over the model, like the
+  creatures; attachments on sockets are BoneAttachment3Ds under the root with an external skeleton
+  (`insect_setup_util.attach` -> the Beasts builder's `attach()`).
+- **Checked (Godot, windowed):** spit, snare, burrow and emerge, laying, the egg row, with and without a collider; the
+  insectoids demo (27 creatures).
+
 ## Open / next
 
 - **Gameplay:** snares only report (`IsSnared`); nothing slows yet. Bite/Strike events carry no damage. The spider

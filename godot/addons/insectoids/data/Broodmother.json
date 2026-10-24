@@ -1,0 +1,125 @@
+{
+ "Broodmother": {
+  "target": "BroodmotherBody",
+  "scale": [
+   0.92,
+   1.08
+  ],
+  "skins": [
+   {
+    "name": "Base",
+    "texture": "T_Broodmother",
+    "weight": 2
+   },
+   {
+    "name": "Ashen",
+    "texture": "T_Broodmother",
+    "tint": [
+     0.86,
+     0.84,
+     0.82
+    ]
+   }
+  ],
+  "pools": [
+   {
+    "name": "Idle",
+    "weight": 2,
+    "clips": [
+     "Idle"
+    ],
+    "hold": [
+     3,
+     6
+    ]
+   },
+   {
+    "name": "Walk",
+    "weight": 1.8,
+    "clips": [
+     "Walk"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "moves": true
+   },
+   {
+    "name": "Threat",
+    "weight": 0.8,
+    "clips": [
+     "Threat"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Bite",
+    "weight": 1,
+    "clips": [
+     "Bite"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Spawn",
+    "weight": 1,
+    "clips": [
+     "Spawn"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Hit",
+    "weight": 0.5,
+    "clips": [
+     "Hit"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Death",
+    "weight": 0.2,
+    "clips": [
+     "Death"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "GetUp",
+    "after": 3
+   },
+   {
+    "name": "GetUp",
+    "weight": 0,
+    "clips": [
+     "GetUp"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   }
+  ],
+  "dir": "res://insectoids/Broodmother/",
+  "setup": "res://addons/insectoids/setup/broodmother_setup.gd"
+ }
+}

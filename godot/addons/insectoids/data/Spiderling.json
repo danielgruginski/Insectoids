@@ -1,0 +1,121 @@
+{
+ "Spiderling": {
+  "target": "SpiderlingBody",
+  "scale": [
+   0.85,
+   1.15
+  ],
+  "skins": [
+   {
+    "name": "Base",
+    "texture": "T_Spiderling",
+    "weight": 2
+   },
+   {
+    "name": "Amber",
+    "texture": "T_Spiderling",
+    "tint": [
+     1.0,
+     0.88,
+     0.72
+    ]
+   },
+   {
+    "name": "Dusky",
+    "texture": "T_Spiderling",
+    "tint": [
+     0.8,
+     0.78,
+     0.76
+    ]
+   }
+  ],
+  "pools": [
+   {
+    "name": "Idle",
+    "weight": 2,
+    "clips": [
+     "Idle"
+    ],
+    "hold": [
+     1.5,
+     3
+    ]
+   },
+   {
+    "name": "Walk",
+    "weight": 2.2,
+    "clips": [
+     "Walk"
+    ],
+    "hold": [
+     2,
+     4
+    ],
+    "moves": true
+   },
+   {
+    "name": "Run",
+    "weight": 1.4,
+    "clips": [
+     "Run"
+    ],
+    "hold": [
+     1,
+     2.5
+    ],
+    "moves": true
+   },
+   {
+    "name": "Bite",
+    "weight": 1.2,
+    "clips": [
+     "Bite"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Hit",
+    "weight": 0.6,
+    "clips": [
+     "Hit"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Death",
+    "weight": 0.25,
+    "clips": [
+     "Death"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "GetUp",
+    "after": 2.5
+   },
+   {
+    "name": "GetUp",
+    "weight": 0,
+    "clips": [
+     "GetUp"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   }
+  ],
+  "dir": "res://insectoids/Spiderling/"
+ }
+}

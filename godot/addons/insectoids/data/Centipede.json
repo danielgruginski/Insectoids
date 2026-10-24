@@ -1,0 +1,163 @@
+{
+ "Centipede": {
+  "target": "CentipedeBody",
+  "scale": [
+   0.85,
+   1.2
+  ],
+  "skins": [
+   {
+    "name": "Base",
+    "texture": "T_Centipede",
+    "weight": 3
+   },
+   {
+    "name": "Dark",
+    "texture": "T_Centipede",
+    "tint": [
+     0.72,
+     0.7,
+     0.72
+    ]
+   },
+   {
+    "name": "Rust",
+    "texture": "T_Centipede",
+    "tint": [
+     1.0,
+     0.82,
+     0.7
+    ]
+   }
+  ],
+  "pools": [
+   {
+    "name": "Idle",
+    "weight": 2,
+    "clips": [
+     "Idle"
+    ],
+    "hold": [
+     2,
+     4
+    ]
+   },
+   {
+    "name": "Walk",
+    "weight": 2.2,
+    "clips": [
+     "Walk"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "moves": true
+   },
+   {
+    "name": "Run",
+    "weight": 0.8,
+    "clips": [
+     "Run"
+    ],
+    "hold": [
+     1.5,
+     3
+    ],
+    "moves": true
+   },
+   {
+    "name": "Threat",
+    "weight": 0.8,
+    "clips": [
+     "Threat"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Bite",
+    "weight": 1.3,
+    "clips": [
+     "Bite"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Burrow",
+    "weight": 0.6,
+    "clips": [
+     "Burrow"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Emerge",
+    "after": 1.5,
+    "relocate": [
+     3,
+     8
+    ]
+   },
+   {
+    "name": "Emerge",
+    "weight": 0,
+    "clips": [
+     "Emerge"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Hit",
+    "weight": 0.5,
+    "clips": [
+     "Hit"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Death",
+    "weight": 0.3,
+    "clips": [
+     "Death"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "GetUp",
+    "after": 2
+   },
+   {
+    "name": "GetUp",
+    "weight": 0,
+    "clips": [
+     "GetUp"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   }
+  ],
+  "dir": "res://insectoids/Centipede/",
+  "setup": "res://addons/insectoids/setup/centipede_setup.gd"
+ }
+}

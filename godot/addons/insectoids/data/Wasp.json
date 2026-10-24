@@ -1,0 +1,141 @@
+{
+ "Wasp": {
+  "target": "WaspBody",
+  "scale": [
+   0.85,
+   1.15
+  ],
+  "skins": [
+   {
+    "name": "Wasp",
+    "texture": "T_Wasp",
+    "weight": 3
+   },
+   {
+    "name": "Hornet",
+    "texture": "T_Wasp",
+    "tint": [
+     1.0,
+     0.78,
+     0.62
+    ]
+   },
+   {
+    "name": "Dark",
+    "texture": "T_Wasp",
+    "tint": [
+     0.74,
+     0.72,
+     0.7
+    ]
+   }
+  ],
+  "surfaces": {
+   "1": {
+    "name": "Wing",
+    "texture": "T_Wasp_Wing",
+    "mode": "blend",
+    "smoothness": 0.8
+   }
+  },
+  "pools": [
+   {
+    "name": "Idle",
+    "weight": 2,
+    "clips": [
+     "Idle"
+    ],
+    "hold": [
+     2,
+     4
+    ]
+   },
+   {
+    "name": "Fly",
+    "weight": 2.4,
+    "clips": [
+     "Fly"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "moves": true
+   },
+   {
+    "name": "Threat",
+    "weight": 0.8,
+    "clips": [
+     "Threat"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Sting",
+    "weight": 1.4,
+    "clips": [
+     "Sting"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Dive",
+    "weight": 1,
+    "clips": [
+     "Dive"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Hit",
+    "weight": 0.6,
+    "clips": [
+     "Hit"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   },
+   {
+    "name": "Death",
+    "weight": 0.3,
+    "clips": [
+     "Death"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "GetUp",
+    "after": 2
+   },
+   {
+    "name": "GetUp",
+    "weight": 0,
+    "clips": [
+     "GetUp"
+    ],
+    "hold": [
+     3,
+     6
+    ],
+    "next": "Idle"
+   }
+  ],
+  "dir": "res://insectoids/Wasp/"
+ }
+}

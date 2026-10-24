@@ -142,6 +142,27 @@ and Run root motion 1.25 and 3.75 m/s along the spider's forward (+Z), the body 
 across loops (claw tips planted: 0.000 m/s slide in Blender over two loops); in Play mode the spiders walk, spit at the
 goblins and leave webs, with no console errors.
 
+## Godot
+
+The insectoids are in the Godot creatures pack (Godot 4.7, GDScript), next to the Beasts repo's creatures; the Beasts
+repo's addon builds them (its README "Godot" has the whole chain).
+
+```
+blender.exe -b --factory-startup blender/insectoids.blend --python tools/godot_export.py -- spider spiderling broodmother wasp centipede eggs
+py ..\Beasts\tools\install_to_godot.py      (the project and the Beasts addon first)
+py tools/install_to_godot.py
+godot --headless --path <project> --script res://addons/beasts/build/build_cli.gd
+```
+
+- `tools/godot_export.py` runs each creature's own build `export()` with the FBX writer swapped for `src/bug_gdx.py`:
+  `export/godot/<Name>/<Name>.glb`, `<name>_clips.json`, the textures; `eggs` exports the egg props.
+- `tools/install_to_godot.py` links `godot/addons/insectoids` into the project (a directory junction: edit the repo
+  copy) and copies the exports to `res://insectoids/<Name>/`.
+- `godot/addons/insectoids`: `data/<Name>.json` (each creature's coats, sizes and clip pools, from the Unity setups),
+  `setup/` (what the builder adds: the web spit, the burrow, the brood on their sockets; the egg scenes) and `fx/`
+  (the effects, ported from SpiderFx and CentipedeBurrow): the web glob with its silk thread and the snare it leaves,
+  the centipede's holes and flying dirt, the broodmother laying `SpiderEgg_Single` at her Spawn event.
+
 ## The wasp
 
 ![The giant wasp next to a goblin](docs/images/wasp.png)
@@ -383,6 +404,8 @@ the hatched shell dark and wet. The egg shape (`spider_eggs.egg`) is shared with
 | `textures/` | painted textures |
 | `unity/Insectoids/` | the Unity scripts (`Runtime/`, `Editor/`) |
 | `tools/install_to_unity.ps1` | copies all of it into a Unity project |
+| `export/godot/`, `godot/addons/insectoids/` | the Godot pack's exports (glTF) and addon (data, setups, effects) |
+| `tools/godot_export.py`, `tools/install_to_godot.py` | the glTF export (`src/bug_gdx.py`) and the install into the Godot project |
 | `tools/spider_family_run.py` | headless Blender driver for the spider family (build, checks, renders, export) |
 | `tools/spider_adult_check.py` | dumps the adult spider's build and compares two dumps (shared code must not change it) |
 | `docs/images/` | the pictures in this README |
